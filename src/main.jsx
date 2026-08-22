@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   AppWindow, ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronDown, Clipboard, Copy, Eye, EyeOff,
-  ExternalLink, FolderOpen, Grid2X2, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Menu,
+  Database, ExternalLink, FolderOpen, Grid2X2, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Menu,
   MoreHorizontal, Pencil, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles,
-  Trash2, UnlockKeyhole, Upload, X, Zap
+  Trash2, UnlockKeyhole, Upload, UserRound, X, Zap, PanelLeftClose, PanelLeftOpen, Download, FileUp, Power
 } from 'lucide-react'
 import './styles.css'
 
@@ -35,13 +35,12 @@ const seedPrompts = [
   { id: 24, title: '每日计划安排', content: '根据任务优先级、预计时长和固定安排，生成一份现实可执行的今日计划。', tags: ['效率', '生活'], updatedAt: '7月 30日' }
 ]
 
-const getInitialPrompts = () => {
-  try {
-    const stored = JSON.parse(localStorage.getItem('workbench-prompts'))
-    if (!Array.isArray(stored)) return seedPrompts
-    const existingTitles = new Set(stored.map(prompt => prompt.title))
-    return [...stored, ...seedPrompts.filter(prompt => !existingTitles.has(prompt.title))]
-  } catch { return seedPrompts }
+let portableStorage = { version: 1, workspaces: [], data: {} }
+const getInitialPrompts = (workspaceId = 'personal') => {
+  const stored = portableStorage.data?.[workspaceId]?.prompts
+  if (!Array.isArray(stored)) return workspaceId === 'personal' ? seedPrompts : []
+  const existingTitles = new Set(stored.map(prompt => prompt.title))
+  return [...stored, ...seedPrompts.filter(prompt => !existingTitles.has(prompt.title))]
 }
 
 const seedLinks = [
@@ -89,37 +88,117 @@ const useAdaptivePageSize = kind => {
   return pageSize
 }
 
-const getInitialLinks = () => {
-  try {
-    const stored = JSON.parse(localStorage.getItem('workbench-links'))
-    if (!Array.isArray(stored)) return seedLinks
-    const existingTitles = new Set(stored.map(link => link.title))
-    return [...stored, ...seedLinks.filter(link => !existingTitles.has(link.title))]
-  } catch { return seedLinks }
+const getInitialLinks = (workspaceId = 'personal') => {
+  const stored = portableStorage.data?.[workspaceId]?.links
+  if (!Array.isArray(stored)) return workspaceId === 'personal' ? seedLinks : []
+  const existingTitles = new Set(stored.map(link => link.title))
+  return [...stored, ...seedLinks.filter(link => !existingTitles.has(link.title))]
 }
 
-const getInitialBooks = () => {
-  try {
-    const stored = JSON.parse(localStorage.getItem('workbench-books'))
-    return Array.isArray(stored) ? stored.filter(book => book.fileId && book.fileName).map(({ progress, progressVersion, ...book }) => book) : []
-  } catch { return [] }
+const getInitialBooks = (workspaceId = 'personal') => {
+  const stored = portableStorage.data?.[workspaceId]?.books
+  return Array.isArray(stored) ? stored.filter(book => book.fileId && book.fileName).map(({ progress, progressVersion, ...book }) => book) : []
 }
 
 const BOOK_FILE_TYPES = ['.pdf', '.epub', '.txt', '.md', '.markdown', '.html', '.htm']
 const bookFileType = fileName => `.${String(fileName).split('.').pop().toLowerCase()}`
-const bookDbPromise = new Promise((resolve, reject) => {
-  const request = indexedDB.open('workbench-books-files', 1)
-  request.onupgradeneeded = () => request.result.createObjectStore('files')
-  request.onsuccess = () => resolve(request.result)
-  request.onerror = () => reject(request.error)
-})
-const saveBookFile = (id, file) => bookDbPromise.then(db => new Promise((resolve, reject) => { const tx = db.transaction('files', 'readwrite'); tx.objectStore('files').put(file, id); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error) }))
-const readBookFile = id => bookDbPromise.then(db => new Promise((resolve, reject) => { const tx = db.transaction('files', 'readonly'); const request = tx.objectStore('files').get(id); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) }))
-const deleteBookFile = id => bookDbPromise.then(db => new Promise((resolve, reject) => { const tx = db.transaction('files', 'readwrite'); tx.objectStore('files').delete(id); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error) }))
+const legacyBookDbPromises = new Map()
+const getLegacyBookDbPromise = (workspaceId = 'personal') => {
+  if (!legacyBookDbPromises.has(workspaceId)) legacyBookDbPromises.set(workspaceId, new Promise((resolve, reject) => {
+    const databaseName = workspaceId === 'personal' ? 'workbench-books-files' : `workbench-books-files-${workspaceId}`
+    const request = indexedDB.open(databaseName, 1)
+    request.onupgradeneeded = () => request.result.createObjectStore('files')
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  }))
+  return legacyBookDbPromises.get(workspaceId)
+}
+const readLegacyBookFile = (workspaceId, id) => getLegacyBookDbPromise(workspaceId).then(db => new Promise((resolve, reject) => { const tx = db.transaction('files', 'readonly'); const request = tx.objectStore('files').get(id); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) }))
+const deleteLegacyBookFile = (workspaceId, id) => getLegacyBookDbPromise(workspaceId).then(db => new Promise((resolve, reject) => { const tx = db.transaction('files', 'readwrite'); tx.objectStore('files').delete(id); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error) }))
+
+const requestJson = async (url, options) => {
+  const response = await fetch(url, options)
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.error || '本地数据保存失败')
+  return result
+}
+
+const pendingStorageWrites = new Set()
+const trackStorageWrite = promise => {
+  pendingStorageWrites.add(promise)
+  promise.finally(() => pendingStorageWrites.delete(promise)).catch(() => {})
+  return promise
+}
+
+const loadPortableStorage = async () => {
+  portableStorage = await requestJson('/api/storage')
+}
+
+const persistWorkspaceRegistry = async workspaces => {
+  portableStorage = await trackStorageWrite(requestJson('/api/storage/registry', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspaces })
+  }))
+}
+
+const persistWorkspaceData = async (workspaceId, key, value) => {
+  const result = await trackStorageWrite(requestJson(`/api/storage/workspaces/${encodeURIComponent(workspaceId)}/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value })
+  }))
+  portableStorage.data[workspaceId] = { ...(portableStorage.data[workspaceId] || {}), [key]: result.value }
+}
+
+const persistWorkspaceImport = async (workspaces, workspaceId, data) => {
+  portableStorage = await trackStorageWrite(requestJson('/api/storage/import', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspaces, workspaceId, data })
+  }))
+}
+
+const persistWorkspaceSecurity = async (workspaces, workspaceId, apiKeys) => {
+  portableStorage = await trackStorageWrite(requestJson('/api/storage/security', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspaces, workspaceId, apiKeys })
+  }))
+}
+
+const bookFileUrl = (workspaceId, id, fileType = '') => `/api/books/${encodeURIComponent(workspaceId)}/${encodeURIComponent(id)}${fileType ? `?type=${encodeURIComponent(fileType)}` : ''}`
+const saveBookFile = async (workspaceId, id, file) => {
+  const response = await fetch(bookFileUrl(workspaceId, id), { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file })
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}))
+    throw new Error(result.error || '书籍文件保存失败')
+  }
+}
+const readBookFile = async (workspaceId, id, fileType) => {
+  let response = await fetch(bookFileUrl(workspaceId, id, fileType))
+  if (response.ok) return response.blob()
+  if (response.status !== 404) throw new Error('书籍文件读取失败')
+  const legacyFile = await readLegacyBookFile(workspaceId, id)
+  if (!legacyFile) return null
+  await saveBookFile(workspaceId, id, legacyFile)
+  response = await fetch(bookFileUrl(workspaceId, id, fileType))
+  return response.ok ? response.blob() : legacyFile
+}
+const deleteBookFile = async (workspaceId, id) => {
+  const response = await fetch(bookFileUrl(workspaceId, id), { method: 'DELETE' })
+  if (!response.ok && response.status !== 404) throw new Error('书籍文件删除失败')
+  await deleteLegacyBookFile(workspaceId, id).catch(() => {})
+}
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
-const toBase64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
+const toBase64 = bytes => {
+  const array = new Uint8Array(bytes)
+  let binary = ''
+  for (let offset = 0; offset < array.length; offset += 0x8000) binary += String.fromCharCode(...array.subarray(offset, offset + 0x8000))
+  return btoa(binary)
+}
 const fromBase64 = value => Uint8Array.from(atob(value), char => char.charCodeAt(0))
 const deriveMaterial = async (password, salt, purpose, bits = false) => {
   const baseKey = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits', 'deriveKey'])
@@ -128,9 +207,11 @@ const deriveMaterial = async (password, salt, purpose, bits = false) => {
   return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: purposeSalt, iterations: 250000, hash: 'SHA-256' }, baseKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
 }
 const createPasswordConfig = async password => { const salt = crypto.getRandomValues(new Uint8Array(16)); const verifier = await deriveMaterial(password, salt, 'workbench-verifier', true); return { salt: toBase64(salt), verifier: toBase64(verifier) } }
-const unlockWithPassword = async password => { const config = JSON.parse(localStorage.getItem('workbench-password') || 'null'); if (!config) return null; const salt = fromBase64(config.salt); const verifier = await deriveMaterial(password, salt, 'workbench-verifier', true); if (toBase64(verifier) !== config.verifier) return null; return deriveMaterial(password, salt, 'workbench-encryption') }
+const unlockWithPassword = async (password, config) => { if (!config) return null; const salt = fromBase64(config.salt); const verifier = await deriveMaterial(password, salt, 'workbench-verifier', true); if (toBase64(verifier) !== config.verifier) return null; return deriveMaterial(password, salt, 'workbench-encryption') }
 const encryptApiValue = async (key, value) => { const iv = crypto.getRandomValues(new Uint8Array(12)); const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(value)); return { iv: toBase64(iv), ciphertext: toBase64(ciphertext) } }
 const decryptApiValue = async (key, record) => decoder.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromBase64(record.iv) }, key, fromBase64(record.ciphertext)))
+const encryptExportData = async (key, value) => { const iv = crypto.getRandomValues(new Uint8Array(12)); const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(JSON.stringify(value))); return { iv: toBase64(iv), ciphertext: toBase64(ciphertext) } }
+const decryptExportData = async (key, record) => JSON.parse(decoder.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromBase64(record.iv) }, key, fromBase64(record.ciphertext))))
 
 const navGroups = [
   { label: '工作台', items: [{ id: 'overview', label: '概述', icon: LayoutDashboard }] },
@@ -145,20 +226,70 @@ const navGroups = [
   ] }
 ]
 
-function App() {
-  const [securityReady, setSecurityReady] = useState(() => Boolean(localStorage.getItem('workbench-password')))
-  const [encryptionKey, setEncryptionKey] = useState(null)
-  const [securityMode, setSecurityMode] = useState(() => localStorage.getItem('workbench-password') ? 'unlock' : 'setup')
-  if (!securityReady || !encryptionKey) return <SecurityGate mode={securityMode} onSetup={async password => { const config = await createPasswordConfig(password); localStorage.setItem('workbench-password', JSON.stringify(config)); setEncryptionKey(await deriveMaterial(password, fromBase64(config.salt), 'workbench-encryption')); setSecurityReady(true) }} onUnlock={async password => { const key = await unlockWithPassword(password); if (!key) return false; setEncryptionKey(key); return true }} />
-  return <WorkbenchApp encryptionKey={encryptionKey} />
+const getWorkspaces = () => {
+  return Array.isArray(portableStorage.workspaces) ? portableStorage.workspaces : []
 }
 
-function WorkbenchApp({ encryptionKey }) {
+function App() {
+  const [workspaces, setWorkspaces] = useState(getWorkspaces)
+  const [workspaceId, setWorkspaceId] = useState(() => getWorkspaces()[0]?.id || '')
+  const [encryptionKey, setEncryptionKey] = useState(null)
+  const [strictWorkspaceId, setStrictWorkspaceId] = useState('')
+  const workspace = workspaces.find(item => item.id === workspaceId)
+  const setupWorkspace = async (name, password) => {
+    for (const item of workspaces) if (await unlockWithPassword(password, item)) return '该密码已属于其他工作区，请设置不同密码'
+    const config = await createPasswordConfig(password)
+    const next = { id: crypto.randomUUID(), name: name.trim(), description: '本地工作区', avatar: name.trim().slice(0, 1).toUpperCase(), ...config }
+    const registry = [...workspaces, next]
+    try { await persistWorkspaceRegistry(registry) } catch (error) { return error.message || '工作区保存失败' }
+    setWorkspaces(registry); setWorkspaceId(next.id); setStrictWorkspaceId(''); setEncryptionKey(await deriveMaterial(password, fromBase64(config.salt), 'workbench-encryption'))
+    return true
+  }
+  const unlockWorkspace = async password => {
+    const candidates = strictWorkspaceId ? workspaces.filter(item => item.id === strictWorkspaceId) : workspaces
+    for (const item of candidates) {
+      const key = await unlockWithPassword(password, item)
+      if (key) { setWorkspaceId(item.id); setStrictWorkspaceId(''); setEncryptionKey(key); return true }
+    }
+    return false
+  }
+  const importConfigFile = async file => {
+    if (!file) return
+    try {
+      const imported = JSON.parse(await file.text())
+      if (imported?.format !== 'personal-workbench-encrypted-config' || imported.version !== 1 || !imported.workspace?.salt || !imported.workspace?.verifier) throw new Error('配置文件格式无效')
+      const originalPassword = window.prompt('请输入该配置原来的工作区密码')
+      if (originalPassword === null) return
+      const importedKey = await unlockWithPassword(originalPassword, imported.workspace)
+      if (!importedKey) throw new Error('原密码不正确，无法导入配置')
+      const payload = await decryptExportData(importedKey, imported)
+      if (payload?.format !== 'personal-workbench-config' || !Array.isArray(payload.data?.prompts) || !Array.isArray(payload.data?.links)) throw new Error('配置内容无效')
+      const existing = workspaces.find(item => item.name.trim().toLocaleLowerCase() === imported.workspace.name.trim().toLocaleLowerCase())
+      if (existing && !window.confirm(`配置名“${imported.workspace.name}”已存在，是否覆盖配置？\n\n注意：工作区密码也会被覆盖。`)) return
+      const nextWorkspace = { ...imported.workspace, id: existing?.id || imported.workspace.id }
+      const registry = existing ? workspaces.map(item => item.id === existing.id ? nextWorkspace : item) : [...workspaces, nextWorkspace]
+      await persistWorkspaceImport(registry, nextWorkspace.id, payload.data)
+      setWorkspaces(registry); setWorkspaceId(nextWorkspace.id); setStrictWorkspaceId(''); setEncryptionKey(importedKey)
+    } catch (error) { window.alert(error.message || '配置导入失败') }
+  }
+  if (!workspace || !encryptionKey) return <SecurityGate mode={workspace ? 'unlock' : 'setup'} workspace={workspace} onSetup={setupWorkspace} onUnlock={unlockWorkspace} workspaces={workspaces} switchingWorkspace={Boolean(strictWorkspaceId)} onImportConfig={importConfigFile} onSelectWorkspace={id => { setStrictWorkspaceId(''); setWorkspaceId(id); setEncryptionKey(null) }} />
+  const replaceWorkspace = async (nextWorkspace, importedKey, persist = true) => {
+    const registry = workspaces.some(item => item.id === nextWorkspace.id)
+      ? workspaces.map(item => item.id === nextWorkspace.id ? nextWorkspace : item)
+      : [...workspaces, nextWorkspace]
+    if (persist) await persistWorkspaceRegistry(registry)
+    setWorkspaces(registry)
+    if (nextWorkspace.id === workspaceId && importedKey) setEncryptionKey(importedKey)
+  }
+  return <WorkbenchApp key={workspaceId} workspace={workspace} workspaces={workspaces} onSwitchWorkspace={id => { setStrictWorkspaceId(id); setEncryptionKey(null); setWorkspaceId(id) }} encryptionKey={encryptionKey} onReplaceWorkspace={replaceWorkspace} />
+}
+
+function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey, onReplaceWorkspace }) {
   const [active, setActive] = useState('overview')
-  const [prompts, setPrompts] = useState(getInitialPrompts)
-  const [links, setLinks] = useState(getInitialLinks)
-  const [books, setBooks] = useState(getInitialBooks)
-  const [apiKeys, setApiKeys] = useState(() => { try { return JSON.parse(localStorage.getItem('workbench-api-keys')) || [] } catch { return [] } })
+  const [prompts, setPrompts] = useState(() => getInitialPrompts(workspace.id))
+  const [links, setLinks] = useState(() => getInitialLinks(workspace.id))
+  const [books, setBooks] = useState(() => getInitialBooks(workspace.id))
+  const [apiKeys, setApiKeys] = useState(() => portableStorage.data?.[workspace.id]?.['api-keys'] || [])
   const [query, setQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState('全部')
   const [bookQuery, setBookQuery] = useState('')
@@ -169,15 +300,16 @@ function WorkbenchApp({ encryptionKey }) {
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [page, setPage] = useState(1)
   const [bookPage, setBookPage] = useState(1)
   const promptPageSize = useAdaptivePageSize('prompt')
   const bookPageSize = useAdaptivePageSize('book')
 
-  useEffect(() => { localStorage.setItem('workbench-prompts', JSON.stringify(prompts)) }, [prompts])
-  useEffect(() => { localStorage.setItem('workbench-links', JSON.stringify(links)) }, [links])
-  useEffect(() => { localStorage.setItem('workbench-books', JSON.stringify(books)) }, [books])
-  useEffect(() => { localStorage.setItem('workbench-api-keys', JSON.stringify(apiKeys)) }, [apiKeys])
+  useEffect(() => { persistWorkspaceData(workspace.id, 'prompts', prompts).catch(() => setToast('提示词保存失败，请重试')) }, [workspace.id, prompts])
+  useEffect(() => { persistWorkspaceData(workspace.id, 'links', links).catch(() => setToast('网址保存失败，请重试')) }, [workspace.id, links])
+  useEffect(() => { persistWorkspaceData(workspace.id, 'books', books).catch(() => setToast('书库保存失败，请重试')) }, [workspace.id, books])
+  useEffect(() => { persistWorkspaceData(workspace.id, 'api-keys', apiKeys).catch(() => setToast('API Key 保存失败，请重试')) }, [workspace.id, apiKeys])
   useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(''), 2200); return () => clearTimeout(timer) } }, [toast])
   useEffect(() => {
     const handleShortcut = event => {
@@ -231,7 +363,7 @@ function WorkbenchApp({ encryptionKey }) {
     setBookImporting(true)
     try {
       const fileId = crypto.randomUUID()
-      await saveBookFile(fileId, file)
+      await saveBookFile(workspace.id, fileId, file)
       const title = file.name.replace(/\.[^.]+$/, '')
       setBooks(prev => [{ id: Date.now(), fileId, fileName: file.name, fileType, title, author: '', category: '', size: file.size, updatedAt: '刚刚' }, ...prev])
       setToast('书籍已导入本机书库')
@@ -244,7 +376,7 @@ function WorkbenchApp({ encryptionKey }) {
     setBooks(prev => book.id ? prev.map(item => item.id === book.id ? normalized : item) : [{ ...normalized, id: Date.now() }, ...prev])
     setModal(null); setToast(book.id ? '书籍已更新' : '书籍已加入书库')
   }
-  const deleteBook = async book => { if (!window.confirm(`确定从书库删除“${book.title}”吗？`)) return; await deleteBookFile(book.fileId).catch(() => {}); setBooks(prev => prev.filter(item => item.id !== book.id)); setToast('书籍已删除') }
+  const deleteBook = async book => { if (!window.confirm(`确定从书库删除“${book.title}”吗？`)) return; await deleteBookFile(workspace.id, book.fileId).catch(() => {}); setBooks(prev => prev.filter(item => item.id !== book.id)); setToast('书籍已删除') }
   const updateBookLocation = useCallback((bookId, location, textOffset) => {
     setBooks(prev => prev.map(item => item.id === bookId ? {
       ...item,
@@ -254,6 +386,111 @@ function WorkbenchApp({ encryptionKey }) {
   }, [])
   const saveApiKey = async record => { let requestUrl = ''; try { requestUrl = new URL(record.requestUrl.trim()).href } catch { return setToast('请输入有效的 HTTP 或 HTTPS 请求地址') } if (!['http:', 'https:'].includes(new URL(requestUrl).protocol)) return setToast('请求地址仅支持 HTTP 或 HTTPS'); if (!record.name.trim() || !record.provider.trim() || !record.value.trim()) return setToast('请填写名称、服务商和 API Key'); const encrypted = await encryptApiValue(encryptionKey, record.value.trim()); const saved = { id: record.id || Date.now(), name: record.name.trim(), provider: record.provider.trim(), requestUrl, encrypted, updatedAt: '刚刚' }; setApiKeys(prev => record.id ? prev.map(item => item.id === record.id ? saved : item) : [saved, ...prev]); setModal(null); setToast(record.id ? 'API Key 已更新' : 'API Key 已加密保存') }
   const deleteApiKey = id => { setApiKeys(prev => prev.filter(item => item.id !== id)); setToast('API Key 已删除') }
+  const renameWorkspace = async name => {
+    const normalized = name.trim()
+    if (!normalized) throw new Error('工作区名称不能为空')
+    const duplicate = workspaces.some(item => item.id !== workspace.id && item.name.trim().toLocaleLowerCase() === normalized.toLocaleLowerCase())
+    if (duplicate) throw new Error('工作区名称已存在')
+    if (normalized === workspace.name) return
+    await onReplaceWorkspace({ ...workspace, name: normalized, avatar: normalized.slice(0, 1).toUpperCase() })
+    setToast('工作区名称已更新')
+  }
+  const changeWorkspacePassword = async ({ currentPassword, newPassword, confirmPassword }) => {
+    if (!currentPassword) throw new Error('请输入当前密码')
+    if (newPassword.length < 8) throw new Error('新密码至少需要 8 位字符')
+    if (newPassword !== confirmPassword) throw new Error('两次输入的新密码不一致')
+    if (!(await unlockWithPassword(currentPassword, workspace))) throw new Error('当前密码错误')
+    if (currentPassword === newPassword) throw new Error('新密码不能与当前密码相同')
+    for (const item of workspaces) {
+      if (item.id !== workspace.id && await unlockWithPassword(newPassword, item)) throw new Error('该密码已属于其他工作区，请使用不同密码')
+    }
+
+    const plaintextKeys = await Promise.all(apiKeys.map(async item => ({ item, value: await decryptApiValue(encryptionKey, item.encrypted) })))
+    const config = await createPasswordConfig(newPassword)
+    const nextKey = await deriveMaterial(newPassword, fromBase64(config.salt), 'workbench-encryption')
+    const reencryptedKeys = await Promise.all(plaintextKeys.map(async ({ item, value }) => ({ ...item, encrypted: await encryptApiValue(nextKey, value) })))
+    const nextWorkspace = { ...workspace, ...config }
+    const registry = workspaces.map(item => item.id === workspace.id ? nextWorkspace : item)
+    await persistWorkspaceSecurity(registry, workspace.id, reencryptedKeys)
+    setApiKeys(reencryptedKeys)
+    await onReplaceWorkspace(nextWorkspace, nextKey, false)
+    setToast('工作区密码已更新')
+  }
+  const exportWorkspace = async () => {
+    const payload = {
+      format: 'personal-workbench-config',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: { prompts, links, books, apiKeys }
+    }
+    try {
+      const encrypted = await encryptExportData(encryptionKey, payload)
+      const output = JSON.stringify({ format: 'personal-workbench-encrypted-config', version: 1, workspace: { id: workspace.id, name: workspace.name, description: workspace.description, avatar: workspace.avatar, salt: workspace.salt, verifier: workspace.verifier }, ...encrypted }, null, 2)
+      const blob = new Blob([output], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `${workspace.name.replace(/[\\/:*?"<>|]/g, '_')}-工作区配置.json`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setToast('配置数据已导出')
+    } catch { setToast('配置导出失败，请重试') }
+  }
+  const importWorkspace = async file => {
+    if (!file) return
+    try {
+      const imported = JSON.parse(await file.text())
+      if (imported?.format !== 'personal-workbench-encrypted-config' || imported.version !== 1 || !imported.workspace?.salt || !imported.workspace?.verifier) throw new Error('配置文件格式无效')
+      const originalPassword = window.prompt('请输入该配置原来的工作区密码')
+      if (originalPassword === null) return
+      const importedKey = await unlockWithPassword(originalPassword, imported.workspace)
+      if (!importedKey) throw new Error('原密码不正确，无法导入配置')
+      const payload = await decryptExportData(importedKey, imported)
+      if (payload?.format !== 'personal-workbench-config' || !Array.isArray(payload.data?.prompts) || !Array.isArray(payload.data?.links)) throw new Error('配置内容无效')
+      const existing = workspaces.find(item => item.name.trim().toLocaleLowerCase() === imported.workspace.name.trim().toLocaleLowerCase())
+      if (existing && !window.confirm(`配置名“${imported.workspace.name}”已存在，是否覆盖配置？\n\n注意：工作区密码也会被覆盖。`)) return
+      const nextWorkspace = { ...imported.workspace, id: existing?.id || imported.workspace.id }
+      const registry = existing ? workspaces.map(item => item.id === existing.id ? nextWorkspace : item) : [...workspaces, nextWorkspace]
+      await persistWorkspaceImport(registry, nextWorkspace.id, payload.data || {})
+      await onReplaceWorkspace(nextWorkspace, importedKey, false)
+      if (existing?.id === workspace.id) {
+        setToast('配置已覆盖，页面将重新加载并使用新密码')
+        window.setTimeout(() => window.location.reload(), 500)
+      } else setToast(existing ? '配置已覆盖，请从工作区列表进入' : '配置已导入，请从工作区列表进入')
+    } catch (error) { setToast(error.message || '配置导入失败') }
+  }
+  const [startupEnabled, setStartupEnabled] = useState(false)
+  const [serverPort, setServerPort] = useState(5180)
+  useEffect(() => {
+    Promise.all([fetch('/api/startup'), fetch('/api/server')]).then(async ([startupResponse, serverResponse]) => {
+      const [startup, server] = await Promise.all([startupResponse.json().catch(() => ({})), serverResponse.json().catch(() => ({}))])
+      if (startupResponse.ok) setStartupEnabled(Boolean(startup.enabled))
+      if (serverResponse.ok && Number.isInteger(server.port)) setServerPort(server.port)
+    }).catch(() => {})
+  }, [])
+  const toggleStartup = async event => {
+    const enabled = event.target.checked
+    try {
+      const response = await fetch('/api/startup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.error || '开机自启动设置失败')
+      setStartupEnabled(Boolean(result.enabled))
+      setToast(result.enabled ? `已开启开机自启动，登录 Windows 后会启动 127.0.0.1:${result.port} 服务` : '已关闭开机自启动')
+    } catch (error) {
+      setStartupEnabled(previous => previous)
+      setToast(error.message || '开机自启动设置失败')
+    }
+  }
+  const saveServerPort = async port => {
+    await Promise.all([...pendingStorageWrites])
+    const response = await fetch('/api/server', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port }) })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(result.error || '端口设置失败')
+    setServerPort(result.port)
+    setToast(result.restarting ? `端口已保存，服务正在自动重启到 127.0.0.1:${result.port}` : '当前服务已绑定该端口')
+    if (result.restarting) window.setTimeout(() => window.location.replace(`http://127.0.0.1:${result.port}/`), 3000)
+    return result
+  }
   const openSearchResult = result => {
     setReaderBook(null)
     setGlobalSearchOpen(false)
@@ -263,10 +500,11 @@ function WorkbenchApp({ encryptionKey }) {
     setActive(result.section)
   }
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
     <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''}`}>
       <div className="brand"><div className="brand-mark"><Grid2X2 size={17} strokeWidth={2.5} /></div><span>工作台</span><span className="brand-dot" /></div>
-      <div className="workspace-switch"><div className="workspace-avatar">W</div><div><strong>个人空间</strong><span>本地工作区</span></div><ChevronDown size={15} /></div>
+      <button className="sidebar-collapse-button" title={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'} aria-label={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'} onClick={() => setSidebarCollapsed(value => !value)}>{sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</button>
+      <WorkspaceSwitcher workspace={workspace} workspaces={workspaces} onSwitch={onSwitchWorkspace} onCreate={() => onSwitchWorkspace('__create__')} />
       <nav className="nav">
         {navGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(item => <button key={item.id} className={`nav-item ${active === item.id ? 'active' : ''}`} onClick={() => { setReaderBook(null); setActive(item.id); setSidebarOpen(false) }}><item.icon size={17} /><span>{item.label}</span>{item.id === 'prompts' && <span className="nav-count">{prompts.length}</span>}</button>)}</div>)}
       </nav>
@@ -274,14 +512,14 @@ function WorkbenchApp({ encryptionKey }) {
     </aside>
     {sidebarOpen && <button className="backdrop" aria-label="关闭菜单" onClick={() => setSidebarOpen(false)} />}
     <main className="main-content">
-      <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><div className="breadcrumbs"><span>工作台</span><span className="slash">/</span><strong>{active === 'overview' ? '概述' : active === 'prompts' ? '提示词库' : active === 'settings' ? '设置' : navGroups.flatMap(g => g.items).find(i => i.id === active)?.label}</strong></div><div className="topbar-actions"><div className="status"><span className="status-dot" />本地运行中</div><button className="icon-button global-search-trigger" title="全局搜索" aria-label="全局搜索" onClick={() => setGlobalSearchOpen(true)}><Search size={18} /></button><div className="top-avatar">C</div></div></header>
-       {readerBook ? <BookReader book={readerBook} onClose={() => setReaderBook(null)} onLocation={updateBookLocation} /> : active === 'overview' ? <Overview prompts={prompts} links={links} apiKeys={apiKeys} onNavigate={setActive} onCopy={copyPrompt} /> : active === 'prompts' ? <PromptLibrary prompts={pagedPrompts} allPrompts={prompts} filteredCount={filtered.length} page={page} pageCount={pageCount} setPage={setPage} tags={tags} query={query} setQuery={setQuery} selectedTag={selectedTag} setSelectedTag={setSelectedTag} onCreate={openCreate} onEdit={openEdit} onDelete={deletePrompt} onCopy={copyPrompt} /> : active === 'links' ? <LinksLibrary links={links} onCreate={() => setModal({ mode: 'link-create', item: { title: '', url: '', content: '', tags: [] } })} onEdit={link => setModal({ mode: 'link-edit', item: { ...link, tags: [...link.tags] } })} onDelete={deleteLink} /> : active === 'keys' ? <ApiKeyLibrary apiKeys={apiKeys} encryptionKey={encryptionKey} onCreate={() => setModal({ mode: 'key-create', item: { name: '', provider: '', value: '', requestUrl: '' } })} onEdit={async record => { try { setModal({ mode: 'key-edit', item: { ...record, requestUrl: record.requestUrl || '', value: await decryptApiValue(encryptionKey, record.encrypted) } }) } catch { setToast('无法解密该 API Key') } }} onDelete={deleteApiKey} /> : active === 'books' ? <BookLibrary books={pagedBooks} allBooks={books} filteredCount={filteredBooks.length} page={bookPage} pageCount={bookPageCount} setPage={setBookPage} query={bookQuery} setQuery={setBookQuery} type={bookType} setType={setBookType} importing={bookImporting} onImport={importBook} onEdit={openEditBook} onDelete={deleteBook} onRead={setReaderBook} /> : active === 'apps' ? <AppLauncher /> : active === 'settings' ? <Placeholder title="设置" icon={Settings2} /> : <Placeholder title={navGroups.flatMap(g => g.items).find(i => i.id === active)?.label} icon={navGroups.flatMap(g => g.items).find(i => i.id === active)?.icon} />}
+      <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><div className="breadcrumbs"><span>工作台</span><span className="slash">/</span><strong>{active === 'overview' ? '概述' : active === 'prompts' ? '提示词库' : active === 'settings' ? '设置' : navGroups.flatMap(g => g.items).find(i => i.id === active)?.label}</strong></div><div className="topbar-actions"><button className="icon-button global-search-trigger" title="全局搜索" aria-label="全局搜索" onClick={() => setGlobalSearchOpen(true)}><Search size={18} /></button></div></header>
+       {readerBook ? <BookReader workspaceId={workspace.id} book={readerBook} onClose={() => setReaderBook(null)} onLocation={updateBookLocation} /> : active === 'overview' ? <Overview prompts={prompts} links={links} apiKeys={apiKeys} onNavigate={setActive} onCopy={copyPrompt} /> : active === 'prompts' ? <PromptLibrary prompts={pagedPrompts} allPrompts={prompts} filteredCount={filtered.length} page={page} pageCount={pageCount} setPage={setPage} tags={tags} query={query} setQuery={setQuery} selectedTag={selectedTag} setSelectedTag={setSelectedTag} onCreate={openCreate} onEdit={openEdit} onDelete={deletePrompt} onCopy={copyPrompt} /> : active === 'links' ? <LinksLibrary links={links} onCreate={() => setModal({ mode: 'link-create', item: { title: '', url: '', content: '', tags: [] } })} onEdit={link => setModal({ mode: 'link-edit', item: { ...link, tags: [...link.tags] } })} onDelete={deleteLink} /> : active === 'keys' ? <ApiKeyLibrary apiKeys={apiKeys} encryptionKey={encryptionKey} onCreate={() => setModal({ mode: 'key-create', item: { name: '', provider: '', value: '', requestUrl: '' } })} onEdit={async record => { try { setModal({ mode: 'key-edit', item: { ...record, requestUrl: record.requestUrl || '', value: await decryptApiValue(encryptionKey, record.encrypted) } }) } catch { setToast('无法解密该 API Key') } }} onDelete={deleteApiKey} /> : active === 'books' ? <BookLibrary books={pagedBooks} allBooks={books} filteredCount={filteredBooks.length} page={bookPage} pageCount={bookPageCount} setPage={setBookPage} query={bookQuery} setQuery={setBookQuery} type={bookType} setType={setBookType} importing={bookImporting} onImport={importBook} onEdit={openEditBook} onDelete={deleteBook} onRead={setReaderBook} /> : active === 'apps' ? <AppLauncher workspaceId={workspace.id} /> : active === 'settings' ? <SettingsPage workspace={workspace} startupEnabled={startupEnabled} serverPort={serverPort} onToggleStartup={toggleStartup} onSaveServerPort={saveServerPort} onRenameWorkspace={renameWorkspace} onChangePassword={changeWorkspacePassword} onExport={exportWorkspace} onImport={file => importWorkspace(file)} /> : <Placeholder title={navGroups.flatMap(g => g.items).find(i => i.id === active)?.label} icon={navGroups.flatMap(g => g.items).find(i => i.id === active)?.icon} />}
     </main>
       {modal?.mode === 'create' || modal?.mode === 'edit' ? <PromptModal modal={modal} onClose={() => setModal(null)} onSave={savePrompt} /> : null}
       {modal?.mode?.startsWith('link-') ? <LinkModal modal={modal} onClose={() => setModal(null)} onSave={saveLink} /> : null}
       {modal?.mode?.startsWith('key-') ? <ApiKeyModal modal={modal} onClose={() => setModal(null)} onSave={saveApiKey} /> : null}
       {modal?.mode?.startsWith('book-') ? <BookModal modal={modal} onClose={() => setModal(null)} onSave={saveBook} /> : null}
-      {globalSearchOpen && <GlobalSearch prompts={prompts} links={links} apiKeys={apiKeys} books={books} onClose={() => setGlobalSearchOpen(false)} onSelect={openSearchResult} />}
+      {globalSearchOpen && <GlobalSearch workspaceId={workspace.id} prompts={prompts} links={links} apiKeys={apiKeys} books={books} onClose={() => setGlobalSearchOpen(false)} onSelect={openSearchResult} />}
     {toast && <div className="toast"><Check size={16} />{toast}</div>}
   </div>
 }
@@ -296,16 +534,16 @@ const searchModules = [
   { key: 'module-settings', kind: 'module', section: 'settings', title: '设置', detail: '工作台设置', keywords: 'settings 配置', icon: Settings2 }
 ]
 
-function GlobalSearch({ prompts, links, apiKeys, books, onClose, onSelect }) {
+function GlobalSearch({ workspaceId, prompts, links, apiKeys, books, onClose, onSelect }) {
   const [query, setQuery] = useState('')
   const [shortcuts, setShortcuts] = useState([])
 
   useEffect(() => {
     const handleEscape = event => { if (event.key === 'Escape') onClose() }
     window.addEventListener('keydown', handleEscape)
-    fetch('/api/shortcuts').then(response => response.ok ? response.json() : null).then(result => setShortcuts(Array.isArray(result?.shortcuts) ? result.shortcuts : [])).catch(() => {})
+    listShortcuts(workspaceId).then(result => setShortcuts(Array.isArray(result?.shortcuts) ? result.shortcuts : [])).catch(() => {})
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [onClose])
+  }, [onClose, workspaceId])
 
   const results = useMemo(() => {
     const entries = [
@@ -336,12 +574,18 @@ function Overview({ prompts, onNavigate, onCopy }) { return <section className="
 
 function PromptLibrary({ prompts, allPrompts, filteredCount, page, pageCount, setPage, tags, query, setQuery, selectedTag, setSelectedTag, onCreate, onEdit, onDelete, onCopy }) { return <section className="page prompts-page"><div className="page-heading library-heading"><div><p className="eyebrow">RESOURCE CENTER</p><h1>提示词库</h1><p className="subheading">沉淀你的思考方式，让每一次提问都更有质量。</p></div><button className="primary-button" onClick={onCreate}><Plus size={17} />新建提示词</button></div><div className="library-toolbar"><div className="search-box"><Search size={17} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索标题、内容或标签..." /><kbd>⌘ K</kbd></div><div className="tag-filter">{tags.slice(0, 5).map(tag => <button key={tag} className={selectedTag === tag ? 'selected' : ''} onClick={() => setSelectedTag(tag)}>{tag}</button>)}{tags.length > 5 && <button className="tag-more"><MoreHorizontal size={16} /></button>}</div></div><div className="library-meta"><span>全部提示词 <strong>{allPrompts.length}</strong></span><span className="meta-divider" /><span>{filteredCount === allPrompts.length ? '按最近编辑排序' : `筛选出 ${filteredCount} 条结果`}</span></div><div className="prompt-grid">{prompts.map(item => <PromptCard key={item.id} item={item} onEdit={onEdit} onDelete={onDelete} onCopy={onCopy} />)}{prompts.length === 0 && <div className="empty-state"><Search size={24} /><strong>没有找到匹配的提示词</strong><span>试试其他关键词或标签</span></div>}</div>{pageCount > 1 && <ResourcePagination page={page} pageCount={pageCount} setPage={setPage} />}</section> }
 
-function SecurityGate({ mode, onSetup, onUnlock }) {
+function WorkspaceSwitcher({ workspace, workspaces, onSwitch, onCreate }) {
+  const [open, setOpen] = useState(false)
+  return <div className="workspace-switch-wrap"><button className="workspace-switch" onClick={() => setOpen(value => !value)} aria-expanded={open}><div className="workspace-avatar">{workspace.avatar || 'W'}</div><div><strong>{workspace.name}</strong><span>{workspace.description || '本地工作区'}</span></div><ChevronDown size={15} /></button>{open && <div className="workspace-menu"><div className="workspace-menu-label">切换工作区</div>{workspaces.map(item => <button key={item.id} className={item.id === workspace.id ? 'active' : ''} onClick={() => { setOpen(false); if (item.id !== workspace.id) onSwitch(item.id) }}><span className="workspace-menu-avatar">{item.avatar || item.name.slice(0, 1)}</span><span>{item.name}</span>{item.id === workspace.id && <Check size={14} />}</button>)}<button className="workspace-create" onClick={() => { setOpen(false); onCreate() }}><Plus size={15} />新建工作区</button></div>}</div>
+}
+
+function SecurityGate({ mode, workspace, onSetup, onUnlock, workspaces, switchingWorkspace, onImportConfig, onSelectWorkspace }) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [name, setName] = useState('')
   const [error, setError] = useState('')
-  const submit = async event => { event.preventDefault(); setError(''); if (password.length < 8) return setError('密码至少需要 8 位字符'); if (mode === 'setup' && password !== confirm) return setError('两次输入的密码不一致'); const ok = mode === 'setup' ? await onSetup(password) : await onUnlock(password); if (mode === 'unlock' && !ok) setError('密码不正确，请重试') }
-  return <div className="security-screen"><div className="security-panel"><div className="security-mark"><LockKeyhole size={25} /></div><p className="eyebrow">PERSONAL WORKSPACE</p><h1>{mode === 'setup' ? '设置工作台密码' : '解锁你的工作台'}</h1><p className="security-copy">{mode === 'setup' ? '密码只保存在本机，用于保护工作台和 API Keys。' : '输入密码后解锁本机数据。'}</p><form onSubmit={submit}><label className="security-label">密码<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoFocus placeholder="至少 8 位字符" /></label>{mode === 'setup' && <label className="security-label">确认密码<input type="password" value={confirm} onChange={event => setConfirm(event.target.value)} placeholder="再次输入密码" /></label>}{error && <div className="security-error">{error}</div>}<button className="primary-button security-submit" type="submit">{mode === 'setup' ? <><ShieldCheck size={17} />创建本地密码</> : <><UnlockKeyhole size={17} />解锁工作台</>}</button></form><div className="security-foot"><ShieldCheck size={14} />数据仅存储在当前设备</div></div></div>
+  const submit = async event => { event.preventDefault(); setError(''); if (mode === 'setup' && !name.trim()) return setError('请填写工作区名称'); if (password.length < 8) return setError('密码至少需要 8 位字符'); if (mode === 'setup' && password !== confirm) return setError('两次输入的密码不一致'); const result = mode === 'setup' ? await onSetup(name, password) : await onUnlock(password); if (typeof result === 'string') return setError(result); if (mode === 'unlock' && !result) setError(switchingWorkspace ? '密码错误，请重试' : '密码不属于任何工作区，请重试') }
+  return <div className="security-screen"><div className="security-panel"><div className="security-mark"><LockKeyhole size={25} /></div><p className="eyebrow">PERSONAL WORKSPACE</p><h1>{mode === 'setup' ? '创建工作区' : `解锁${workspace.name}`}</h1><p className="security-copy">{mode === 'setup' ? '每个工作区都有独立密码和独立数据。' : '输入该工作区密码后继续。'}</p><form onSubmit={submit}>{mode === 'setup' && <label className="security-label">工作区名称<input value={name} onChange={event => setName(event.target.value)} autoFocus placeholder="例如：个人空间" /></label>}<label className="security-label">密码<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoFocus={mode !== 'setup'} placeholder="至少 8 位字符" /></label>{mode === 'setup' && <label className="security-label">确认密码<input type="password" value={confirm} onChange={event => setConfirm(event.target.value)} placeholder="再次输入密码" /></label>}{error && <div className="security-error">{error}</div>}<button className="primary-button security-submit" type="submit">{mode === 'setup' ? <><ShieldCheck size={17} />创建工作区</> : <><UnlockKeyhole size={17} />解锁工作区</>}</button></form>{mode === 'setup' && <label className="security-import-link">导入已有配置<input type="file" accept="application/json,.json" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; onImportConfig(file) }} /></label>}{workspaces.length > 1 && <div className="security-workspaces"><span>切换其他工作区</span>{workspaces.map(item => <button key={item.id} onClick={() => onSelectWorkspace(item.id)}>{item.name}</button>)}</div>}<div className="security-foot"><ShieldCheck size={14} />数据仅存储在当前设备</div></div></div>
 }
 
 const BOOK_TYPES = ['全部', '.pdf', '.epub', '.txt', '.md', '.html']
@@ -381,7 +625,7 @@ function BookModal({ modal, onClose, onSave }) {
   return <div className="modal-backdrop"><div className="modal book-modal"><div className="modal-header"><div><span className="modal-kicker">EDIT BOOK INFO</span><h2>编辑书籍信息</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div><div className="book-file-note"><BookOpen size={16} />{item.fileName}</div><div className="form-field"><label>书名</label><input autoFocus value={item.title} onChange={event => set('title', event.target.value)} placeholder="书名" /></div><div className="form-field"><label>作者</label><input value={item.author || ''} onChange={event => set('author', event.target.value)} placeholder="作者（可选）" /></div><div className="form-field"><label>分类</label><input value={item.category || ''} onChange={event => set('category', event.target.value)} placeholder="分类（可选）" /></div><div className="modal-footer"><button className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" onClick={() => onSave(item)}><Check size={16} />保存信息</button></div></div></div>
 }
 
-function BookReader({ book, onClose, onLocation }) {
+function BookReader({ workspaceId, book, onClose, onLocation }) {
   const [url, setUrl] = useState('')
   const [text, setText] = useState('')
   const [error, setError] = useState('')
@@ -396,7 +640,7 @@ function BookReader({ book, onClose, onLocation }) {
     let disposed = false
     const load = async () => {
       try {
-        const file = await readBookFile(book.fileId)
+        const file = await readBookFile(workspaceId, book.fileId, book.fileType)
         if (!file || disposed) return setError('找不到本地书籍文件，请重新导入')
         if (book.fileType === '.epub') {
           const arrayBuffer = await file.arrayBuffer()
@@ -426,7 +670,7 @@ function BookReader({ book, onClose, onLocation }) {
     }
     load()
     return () => { disposed = true; renditionRef.current = null; if (objectUrl) URL.revokeObjectURL(objectUrl); epubBookRef.current?.destroy?.() }
-  }, [book.id, book.fileId, book.fileType, book.title, book.fileName, onLocation])
+  }, [workspaceId, book.id, book.fileId, book.fileType, book.title, book.fileName, onLocation])
   useEffect(() => {
     if (book.fileType === '.epub' || !text || !textReaderRef.current || typeof book.textOffset !== 'number') return
     const target = textReaderRef.current
@@ -448,7 +692,32 @@ const fileToBase64 = async file => {
   return btoa(binary)
 }
 
-function AppLauncher() {
+const listShortcuts = async workspaceId => {
+  const response = await fetch(`/api/shortcuts?workspace=${encodeURIComponent(workspaceId)}`)
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.error || '无法读取本机快捷方式')
+  return result
+}
+const addShortcutRecord = async (workspaceId, payload) => {
+  const response = await fetch(`/api/shortcuts?workspace=${encodeURIComponent(workspaceId)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.error || '快捷方式保存失败')
+  return result
+}
+const launchShortcutRecord = async (workspaceId, id) => {
+  const response = await fetch(`/api/shortcuts/${encodeURIComponent(id)}/launch?workspace=${encodeURIComponent(workspaceId)}`, { method: 'POST' })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.error || '启动失败')
+  return result
+}
+const removeShortcutRecord = async (workspaceId, id) => {
+  const response = await fetch(`/api/shortcuts/${encodeURIComponent(id)}?workspace=${encodeURIComponent(workspaceId)}`, { method: 'DELETE' })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.error || '删除失败')
+  return result
+}
+
+function AppLauncher({ workspaceId = 'personal' }) {
   const [shortcuts, setShortcuts] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -465,9 +734,7 @@ function AppLauncher() {
     setLoading(true)
     setError('')
     try {
-      const response = await fetch('/api/shortcuts')
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(result.error || '无法读取本机快捷方式')
+      const result = await listShortcuts(workspaceId)
       setShortcuts(Array.isArray(result.shortcuts) ? result.shortcuts : [])
     } catch (loadError) {
       setError(loadError.message || '无法连接本机快捷方式服务')
@@ -476,7 +743,7 @@ function AppLauncher() {
     }
   }
 
-  useEffect(() => { loadShortcuts() }, [])
+  useEffect(() => { loadShortcuts() }, [workspaceId])
 
   const addShortcut = async event => {
     const file = event.target.files?.[0]
@@ -486,9 +753,7 @@ function AppLauncher() {
     if (!['.lnk', '.url'].includes(extension)) return setError('请选择 Windows .lnk 或 .url 快捷方式')
     setSaving(true); setError(''); setMessage('')
     try {
-      const response = await fetch('/api/shortcuts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: file.name.replace(/\.(lnk|url)$/i, ''), fileName: file.name, data: await fileToBase64(file) }) })
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(result.error || '快捷方式保存失败')
+      const result = await addShortcutRecord(workspaceId, { name: file.name.replace(/\.(lnk|url)$/i, ''), fileName: file.name, data: await fileToBase64(file) })
       setShortcuts(prev => [...prev, result.shortcut])
       setMessage('快捷方式已添加')
     } catch (saveError) {
@@ -501,9 +766,7 @@ function AppLauncher() {
   const launchShortcut = async id => {
     setBusyId(id); setError(''); setMessage('')
     try {
-      const response = await fetch(`/api/shortcuts/${encodeURIComponent(id)}/launch`, { method: 'POST' })
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(result.error || '启动失败')
+      await launchShortcutRecord(workspaceId, id)
       setMessage('启动指令已发送')
     } catch (launchError) {
       setError(launchError.message || '启动失败')
@@ -516,11 +779,7 @@ function AppLauncher() {
     if (!shortcuts.length || busyId) return
     setBusyId('all'); setError(''); setMessage('')
     try {
-      await Promise.all(shortcuts.map(async shortcut => {
-        const response = await fetch(`/api/shortcuts/${encodeURIComponent(shortcut.id)}/launch`, { method: 'POST' })
-        const result = await response.json().catch(() => ({}))
-        if (!response.ok) throw new Error(`${shortcut.name}: ${result.error || '启动失败'}`)
-      }))
+      await Promise.all(shortcuts.map(shortcut => launchShortcutRecord(workspaceId, shortcut.id).catch(error => { throw new Error(`${shortcut.name}: ${error.message || '启动失败'}`) })))
       setMessage(`已发送 ${shortcuts.length} 个应用的启动指令`)
     } catch (launchError) {
       setError(launchError.message || '部分应用启动失败')
@@ -533,9 +792,7 @@ function AppLauncher() {
     if (!window.confirm(`确定删除“${shortcut.name}”吗？`)) return
     setError(''); setMessage('')
     try {
-      const response = await fetch(`/api/shortcuts/${encodeURIComponent(shortcut.id)}`, { method: 'DELETE' })
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(result.error || '删除失败')
+      await removeShortcutRecord(workspaceId, shortcut.id)
       setShortcuts(prev => prev.filter(item => item.id !== shortcut.id))
       setMessage('快捷方式已删除')
     } catch (removeError) {
@@ -561,6 +818,103 @@ function AppLauncher() {
   </section>
 }
 
+const settingsSections = [
+  { id: 'workspace', label: '工作区', icon: UserRound },
+  { id: 'security', label: '密码与安全', icon: LockKeyhole },
+  { id: 'data', label: '数据管理', icon: Database },
+  { id: 'startup', label: '启动设置', icon: Power }
+]
+
+function SettingsPage({ workspace, startupEnabled, serverPort, onToggleStartup, onSaveServerPort, onRenameWorkspace, onChangePassword, onExport, onImport }) {
+  const [section, setSection] = useState('workspace')
+  const [workspaceName, setWorkspaceName] = useState(workspace.name)
+  const [nameError, setNameError] = useState('')
+  const [nameSaved, setNameSaved] = useState(false)
+  const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSaved, setPasswordSaved] = useState(false)
+  const [savingPassword, setSavingPassword] = useState(false)
+  const [portValue, setPortValue] = useState(String(serverPort))
+  const [portMessage, setPortMessage] = useState('')
+  const [portError, setPortError] = useState('')
+  const [savingPort, setSavingPort] = useState(false)
+
+  useEffect(() => setWorkspaceName(workspace.name), [workspace.name])
+  useEffect(() => setPortValue(String(serverPort)), [serverPort])
+
+  const saveWorkspaceName = async event => {
+    event.preventDefault()
+    setNameError(''); setNameSaved(false)
+    try {
+      await onRenameWorkspace(workspaceName)
+      setNameSaved(true)
+    } catch (error) { setNameError(error.message || '工作区名称修改失败') }
+  }
+  const savePassword = async event => {
+    event.preventDefault()
+    setPasswordError(''); setPasswordSaved(false); setSavingPassword(true)
+    try {
+      await onChangePassword(passwords)
+      setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' })
+      setPasswordSaved(true)
+    } catch (error) { setPasswordError(error.message || '工作区密码修改失败') } finally { setSavingPassword(false) }
+  }
+  const setPasswordField = (field, value) => setPasswords(previous => ({ ...previous, [field]: value }))
+  const savePort = async event => {
+    event.preventDefault()
+    setPortError(''); setPortMessage(''); setSavingPort(true)
+    try {
+      const result = await onSaveServerPort(Number(portValue))
+      setPortMessage(result.restarting ? `正在自动重启；服务就绪后会打开 http://127.0.0.1:${result.port}/` : '当前服务已绑定该端口')
+    } catch (error) { setPortError(error.message || '端口设置失败') } finally { setSavingPort(false) }
+  }
+
+  return <section className="page settings-page">
+    <div className="page-heading library-heading"><div><h1>设置</h1><p className="subheading">管理当前工作区、安全、数据与本地服务。</p></div></div>
+    <div className="settings-shell">
+      <nav className="settings-nav" aria-label="设置分类">
+        <div className="settings-nav-heading">设置</div>
+        {settingsSections.map(item => <button key={item.id} className={section === item.id ? 'active' : ''} onClick={() => setSection(item.id)}><item.icon size={17} /><span>{item.label}</span></button>)}
+      </nav>
+      <div className="settings-content">
+        {section === 'workspace' && <section className="settings-section">
+          <div className="settings-section-heading"><h2>工作区</h2><p>修改当前工作区的显示名称。</p></div>
+          <form className="settings-form" onSubmit={saveWorkspaceName}>
+            <label><span>工作区名称</span><input value={workspaceName} onChange={event => { setWorkspaceName(event.target.value); setNameError(''); setNameSaved(false) }} maxLength={40} /></label>
+            <div className="settings-form-footer"><div className={`settings-feedback ${nameError ? 'error' : ''}`}>{nameError || (nameSaved ? '名称已保存' : '')}</div><button className="primary-button" type="submit" disabled={!workspaceName.trim() || workspaceName.trim() === workspace.name}>保存更改</button></div>
+          </form>
+          <div className="settings-detail-row"><div><strong>工作区标识</strong><span>用于隔离本机数据，创建后不可修改。</span></div><code>{workspace.id}</code></div>
+        </section>}
+        {section === 'security' && <section className="settings-section">
+          <div className="settings-section-heading"><h2>密码与安全</h2><p>修改进入“{workspace.name}”时使用的密码。</p></div>
+          <form className="settings-form settings-password-form" onSubmit={savePassword}>
+            <label><span>当前密码</span><input type="password" autoComplete="current-password" value={passwords.currentPassword} onChange={event => setPasswordField('currentPassword', event.target.value)} placeholder="输入当前工作区密码" /></label>
+            <label><span>新密码</span><input type="password" autoComplete="new-password" value={passwords.newPassword} onChange={event => setPasswordField('newPassword', event.target.value)} placeholder="至少 8 位字符" /></label>
+            <label><span>确认新密码</span><input type="password" autoComplete="new-password" value={passwords.confirmPassword} onChange={event => setPasswordField('confirmPassword', event.target.value)} placeholder="再次输入新密码" /></label>
+            <p className="settings-inline-note">修改后，当前工作区保存的 API Key 会自动使用新密码重新加密。</p>
+            <div className="settings-form-footer"><div className={`settings-feedback ${passwordError ? 'error' : ''}`}>{passwordError || (passwordSaved ? '密码已更新' : '')}</div><button className="primary-button" type="submit" disabled={savingPassword}>{savingPassword ? '正在更新...' : '更新密码'}</button></div>
+          </form>
+        </section>}
+        {section === 'data' && <section className="settings-section">
+          <div className="settings-section-heading"><h2>数据管理</h2><p>导出当前工作区，或从加密配置文件恢复数据。</p></div>
+          <div className="settings-detail-row settings-action-row"><div><strong>导出工作区配置</strong><span>提示词、网址、书籍元数据和 API Key 密文会被打包并再次加密。</span></div><button className="secondary-button" onClick={onExport}><Download size={16} />导出配置</button></div>
+          <div className="settings-detail-row settings-action-row"><div><strong>导入工作区配置</strong><span>需要输入配置原密码；同名工作区可以选择覆盖，密码也会被覆盖。</span></div><label className="secondary-button settings-import-button"><FileUp size={16} />导入配置<input type="file" accept="application/json,.json" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; onImport(file) }} /></label></div>
+        </section>}
+        {section === 'startup' && <section className="settings-section">
+          <div className="settings-section-heading"><h2>启动设置</h2><p>控制 Windows 登录后的本地服务行为。</p></div>
+          <div className="settings-detail-row settings-toggle-row"><div><strong>开机自启动</strong><span>登录 Windows 后自动启动本地工作台服务。</span></div><label className="settings-toggle" title={startupEnabled ? '关闭开机自启动' : '开启开机自启动'}><input type="checkbox" checked={startupEnabled} onChange={onToggleStartup} /><span className="toggle-track" /><span className="settings-toggle-state">{startupEnabled ? '已开启' : '已关闭'}</span></label></div>
+          <form className="settings-detail-row settings-port-row" onSubmit={savePort}><div><strong>绑定端口</strong><span>服务只监听 127.0.0.1；端口范围为 1024 到 65535，修改后会自动重启并打开新地址。</span><span className={`settings-port-feedback ${portError ? 'error' : ''}`}>{portError || portMessage}</span></div><div className="settings-port-control"><input aria-label="绑定端口" type="number" min="1024" max="65535" step="1" value={portValue} onChange={event => { setPortValue(event.target.value); setPortError(''); setPortMessage('') }} /><button className="secondary-button" type="submit" disabled={savingPort || !portValue}>{savingPort ? '保存中...' : '保存端口'}</button></div></form>
+        </section>}
+      </div>
+    </div>
+  </section>
+}
+
 function Placeholder({ title, icon: Icon }) { return <section className="page placeholder-page"><div className="placeholder-icon">{Icon && <Icon size={28} />}</div><h1>{title}</h1><p>这个模块将在后续版本中开放。</p><span>先把你的工作台骨架搭好，再逐步加入更多能力。</span></section> }
 
-createRoot(document.getElementById('root')).render(<App />)
+const root = createRoot(document.getElementById('root'))
+loadPortableStorage().then(() => {
+  root.render(<App />)
+}).catch(error => {
+  root.render(<div className="security-screen"><div className="security-panel"><h1>无法读取本地数据</h1><p className="security-copy">{error.message || '请确认本地服务正在运行后刷新页面。'}</p></div></div>)
+})

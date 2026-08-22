@@ -1,3 +1,4 @@
 .workbench-data/
 dist/
 node_modules/
+release/

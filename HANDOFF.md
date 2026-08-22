@@ -1,134 +1,140 @@
 # 个人工作台交接文档
 
-本文写给没有本会话上下文的后续开发者。项目目录是 `E:\vibe_coding\cc_workbench`，当前对话使用中文。
+本文写给完全没有上下文的新会话。项目目录是 `E:\vibe_coding\cc_workbench`，用户使用中文。
+
+## 首要协作规则
+
+> 后续不要自行验证。完成代码修改后交给用户手动验证。
+
+- 除非用户明确要求，否则不要运行 `npm run build`、测试命令、浏览器自动化或截图检查。
+- 不要自行启动额外开发服务、创建测试工作区、填写测试密码或插入测试数据。
+- 不要自行修改绑定端口、切换开机自启动、创建/删除 Windows 启动项或启动真实软件。
+- 未执行验证时必须如实说明“未验证，等待用户检查”，不能假装通过。
+- 用户未明确要求时，不要执行 Git 提交、打标签或推送。
 
 ## 我们在做什么
 
-正在开发一个本地运行的个人工作台。用户通过 `http://127.0.0.1:<端口>/` 访问前端，目标是把高频个人资源集中在一个简约的左侧菜单、右侧内容控制台中。
+正在开发一个只在本机运行的个人工作台。它使用 React、Vite 和 JavaScript，通过 `http://127.0.0.1:<端口>/` 在浏览器中访问，不提供账户、云同步或远程数据库。
 
-用户明确的范围是：
+当前任务是重做设置页并补齐设置能力：
 
-- 只启动本机软件。
-- 提示词需要标题、内容、标签、搜索、复制、编辑、删除。
-- 网址收藏需要标题、内容/备注、标签，并支持分页。
-- API Key 需要名称、服务商、API Key、请求地址；只有 API Key 加密。
-- 数据只保存在本机，工作台进入前需要密码，第一次打开设置密码。
-- 先完成骨架，再逐步加入功能。
-- 当前修改不要上传 Git；只有用户明确要求时才提交或推送。
+- 把并排卡片改成标准设置页排版。
+- 设置页采用左侧分类、右侧内容的结构。
+- 支持修改工作区名称。
+- 支持修改工作区密码，并保证已有 API Key 仍可解密。
+- 支持设置本地服务绑定端口，默认端口为 `5180`。
+- 保留配置导入导出和 Windows 开机自启动。
 
-## 已完成什么
+## 已经完成什么
 
-### 前端和导航
+### 运行架构
 
-- 技术栈是 React + Vite + JavaScript + `lucide-react`。
-- `src/main.jsx` 负责页面状态、路由式模块切换、表单、数据持久化和加密逻辑。
-- `src/styles.css` 负责简约控制台布局、侧边栏、分页、模态框、响应式样式和状态提示。
-- 默认打开“概述”；左侧分组包括概述、提示词库、网址收藏、API Keys、应用启动器、个人书库；设置按钮固定在侧边栏底部并复用导航选中样式。
-- 设置页目前仍由 `Placeholder` 占位组件显示，不能把它描述成已完成功能。
+- 项目只保留本地 Vite 服务，不维护其他运行形态。
+- Electron 源码、依赖、打包脚本和构建产物已经删除。
+- 服务只监听 `127.0.0.1`，不允许监听 `0.0.0.0`。
+- `npm run dev` 和 `npm run preview` 从 `vite.config.js` 读取绑定端口。
+- 默认端口是 `5180`；端口配置保存在 `.workbench-data/server.json`。
+- 工作区注册表和业务配置统一保存在 `.workbench-data/workbench.json`，不再随浏览器端口变化。
+- 书籍文件保存在 `.workbench-data/workspaces/{workspaceId}/books/`，换端口后仍可阅读。
+- 全新安装只读取自身 `.workbench-data`，不会自动读取浏览器 `localStorage`；旧版本升级通过加密配置导出/导入完成。
 
-### 提示词库
+### 设置页
 
-- 数据字段：`title`、`content`、`tags`、`updatedAt`、`id`。
-- 支持创建、编辑、删除、复制、关键词搜索和标签筛选。
-- 卡片右上角三点菜单按垂直顺序显示复制、编辑、删除。
-- 每页 6 条；过滤条件变化会回到第 1 页，删除最后一页数据会自动回退页码。
-- `seedPrompts` 提供 24 条示例数据；`getInitialPrompts()` 会读取 `localStorage` 后按标题补齐缺失种子。
+- 设置页已改成单一设置容器，不再显示两块并排功能卡片。
+- 内部分类为“工作区”“密码与安全”“数据管理”“启动设置”。
+- 桌面端为左侧分类导航、右侧开放式设置内容。
+- 窄屏下分类导航改为两列网格，避免横向滚动条和分类被截断。
+- 工作区名称修改会检查空值和重名，并同步更新侧边栏名称与头像首字。
+- 密码修改需要当前密码、新密码和确认密码。
+- 新密码至少 8 位，不能与当前密码相同，也不能与其他工作区密码重复。
+- 修改密码时会先解密当前工作区所有 API Key，再使用新密码派生的新 AES-256-GCM 密钥重新加密；全部成功后才更新密码校验材料。
+- 数据管理保留加密配置导出和导入。
+- 启动设置保留开机自启动，并新增端口输入与保存按钮。
 
-### 网址收藏
+### 端口绑定
 
-- 数据字段：`title`、`url`、`content`、`tags`、`id`。
-- 支持创建、编辑、删除和新标签页打开。
-- 保存时只允许 `http:` 和 `https:` URL。
-- `seedLinks` 包含 4 条基础示例和 20 条分页测试网址；`getInitialLinks()` 按标题合并已有浏览器数据。
-- 每页 6 条，组件内部维护分页状态。
+- 新增 `GET /api/server`：返回 `host`、配置端口、当前活动端口和是否需要重启。
+- 新增 `POST /api/server`：保存端口，范围为 `1024-65535`。
+- 保存前会检查目标端口是否已被其他程序占用。
+- 运行中的 Vite 服务不会原地换端口；保存成功后会通过 `restart-workbench.vbs` 静默重启，当前浏览器标签页随后跳转到新地址。
+- 如果开机自启动已开启，修改端口会同步重写 `.workbench-data/start-workbench.vbs`。
+- Windows 启动快捷方式仍位于 `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\PersonalWorkbench.lnk`。
+- 服务未启动时可双击 `restart-workbench.vbs` 静默启动；没有端口配置时默认使用 `5180`，否则使用已保存端口。VBS 隐藏调用 `restart-workbench.cmd`，Vite 由独立 Node 进程承载。
 
-### API Key
+### 已有模块
 
-- 数据字段：明文 `name`、`provider`、`requestUrl`，以及 `encrypted: { iv, ciphertext }`。
-- 只有 API Key 值加密；名称、服务商和请求地址不加密。
-- 请求地址只允许 `http:` 和 `https:`。
-- 列表默认掩码；当前解锁会话点击眼睛按钮后解密并显示，刷新后内存状态清空。
-- 支持创建、编辑、删除、显示/隐藏和每页 6 条分页。
+- 多工作区创建、密码解锁、切换和本地数据隔离。
+- 提示词标题、内容、标签、搜索、复制、编辑、删除和自适应分页。
+- 网址收藏标题、网址、备注、标签、打开、编辑、删除和分页。
+- API Key 名称、服务商、请求地址明文保存，只有 Key 值使用 AES-256-GCM 加密。
+- 应用快捷方式导入、单个启动、全部启动和删除；只支持 Windows `.lnk` / `.url`。
+- 本地书库导入和阅读 PDF、EPUB、TXT、Markdown、HTML。
+- EPUB 保存 CFI，TXT/Markdown 保存滚动位置；不显示阅读百分比。
+- 工作区配置加密导出和导入，同名配置可确认覆盖，覆盖包含工作区密码。
+- 侧边栏收起/展开、全局搜索、概述页和响应式布局。
 
-### 个人书库
+## 当前卡在哪里
 
-- 书库不是阅读状态记录模块，而是本机电子书导入和阅读模块。
-- 支持导入 `.pdf`、`.epub`、`.txt`、`.md`、`.markdown`、`.html`、`.htm`。
-- `localStorage` 的 `workbench-books` 只保存元数据：`id`、`fileId`、`fileName`、`fileType`、`title`、`author`、`category`、`size`、EPUB 的 `location`、文本文件的 `textOffset` 和 `updatedAt`。旧的 `progress`、`progressVersion` 字段会在加载时移除。
-- 文件本体保存在浏览器 IndexedDB 数据库 `workbench-books-files` 的 `files` object store 中；不经过网络，也不写入项目目录。
-- 支持导入、搜索书名/作者/分类/文件名、按文件类型筛选、编辑元数据、删除和每页 6 条分页。
-- 点击“阅读”在右侧主内容区打开 `BookReader`，左上角“返回书库”关闭阅读页；PDF 使用 iframe，HTML 使用 sandbox iframe，TXT/Markdown 使用文本视图，EPUB 通过按需加载的 `epubjs` 分页渲染。
-- EPUB 阅读页底部的“上一页”和“下一页”调用 `rendition.prev()` / `rendition.next()`；不要只渲染第一章而不保存 rendition 实例。
-- `package.json` 的 `overrides` 将 `@xmldom/xmldom` 锁定到 `0.9.12`，避免 `epubjs@0.3.93` 默认带入有漏洞的旧 XML 解析器。修改 EPUB 依赖时必须重新运行 `npm audit --omit=dev`。
-- 由于书籍文件在 IndexedDB 中，清除站点数据会一并删除已导入的书籍文件。`.mobi`、`.azw` 暂不支持。
+没有代码层面的硬阻塞，当前停在用户手动验收阶段。
 
-### 密码和加密
+本会话在用户提出“以后不要自行验证”之前完成过以下检查，仅作为历史记录：
 
-- 首次没有 `workbench-password` 时显示设置页，密码至少 8 位。
-- 后续显示解锁页，输入错误密码不会进入工作台。
-- 使用 16 字节随机盐值、PBKDF2 SHA-256 250,000 次迭代派生材料。
-- 使用 AES-256-GCM；每个 API Key 使用独立 12 字节随机 IV。
-- `localStorage` 只保存验证材料、盐值、API Key 密文和非敏感元数据，不保存密码明文。
-- 没有密码找回机制。清除站点数据会丢失浏览器中保存的所有本地资源。
+- 设置页改造和端口功能加入后，`npm run build` 曾通过。
+- `/api/server` 曾确认：保存 `5180` 成功，端口 `80` 返回 400，已占用的 `5181` 返回 409。
+- 桌面设置布局、分类切换和工作区改名曾在隔离的 `5181` 来源中操作成功。
 
-### 应用启动器
+尚未由用户确认的内容：
 
-- 组件在 `src/main.jsx` 的 `AppLauncher`。
-- 选择 `.lnk` 或 `.url` 文件后通过 `POST /api/shortcuts` 上传到本地 Vite 接口。
-- 页面支持单个“启动”、左侧的“全部启动”、刷新和删除。
-- 快捷方式索引写入 `.workbench-data/shortcuts.json`，文件副本写入 `.workbench-data/shortcuts/`；目录已被 `.gitignore` 忽略。
-- `vite.config.js` 注册本地 middleware：`GET /api/shortcuts`、`POST /api/shortcuts`、`POST /api/shortcuts/:id/launch`、`DELETE /api/shortcuts/:id`。
-- 启动接口只在 Windows 执行 PowerShell `Start-Process -FilePath`，并等待 PowerShell 子进程退出后返回。当前不支持 macOS/Linux。
+- 修改密码的完整流程，以及修改后刷新页面能否使用新密码登录。
+- 有现存 API Key 时，修改密码后显示、编辑和再次保存是否正常。
+- 新增端口输入区域的最终视觉效果。
+- 窄屏两列设置分类的最终视觉效果。
+- 修改到其他空闲端口后，重启服务是否从该端口打开。
+- 换端口后工作区、配置和书籍能否完整打开。
+- 开机自启动已开启时，修改端口后重新登录 Windows 是否使用新端口。
 
-## 当前状态和可能的卡点
-
-目前没有已知的代码阻塞；最近一次 `npm run build` 已通过，Vite 服务曾运行在 `http://127.0.0.1:5173/`。服务进程不是永久保证的，后续会话应先检查端口，必要时重新运行启动命令。
-
-仍需要注意的未完成事项：
-
-- 设置页只是占位页，概述中的“主题、默认打开页面和快捷键”文案尚未对应真实设置能力。
-- 没有自动化测试套件；目前主要依赖 `npm run build` 和手动浏览器验证。
-- 书籍导入目前依赖浏览器 IndexedDB，尚未实现书籍导出/备份；阅读器的章节导航和字体设置还未实现。阅读百分比功能已移除：EPUB 只在 `relocated` 事件中保存最后 CFI，并在下次打开时传给 `rendition.display(savedCfi)`；TXT/Markdown 保存并恢复 `scrollTop`。保存位置时不得让 `BookReader` 因书籍对象更新而重新初始化。
-- 浏览器自动化无法代替用户输入工作台密码，也不应自动点击真实 FinalShell、VS Code 等快捷方式。
-- 目前没有数据导入/导出，浏览器 `localStorage` 与项目 `.workbench-data` 需要分别备份。
-
-如果用户反馈“启动指令已发送但软件没有启动”，先检查：服务是否仍在运行、是否为 Windows、快捷方式文件是否存在、快捷方式是否能在资源管理器中手动启动，以及 PowerShell 是否能执行 `Start-Process -FilePath`。不要改回 `-LiteralPath`：Windows PowerShell 的 `Start-Process` 不兼容此前使用的该参数，现有实现必须保留 `-FilePath`。
+已发现但本次没有处理的旧问题：概述页底部“去设置”按钮没有绑定点击事件。进入设置页应使用侧边栏设置按钮。
 
 ## 下一步计划
 
-建议按以下顺序继续：
+1. 等待用户手动检查设置页桌面与窄屏排版。
+2. 根据用户反馈修正设置布局，不要自行打开浏览器复查。
+3. 由用户手动验证工作区改名和密码修改。
+4. 由用户手动验证端口修改、服务重启和开机自启动。
+5. 用户确认后更新 README 中任何与实际体验不一致的细节。
+6. 只有用户明确要求时再提交 Git 或创建版本。
 
-1. 先启动服务并手动回归当前功能：首次密码设置、刷新解锁、提示词搜索/分页、网址分页、API Key 加密显示/编辑、无害快捷方式启动。
-2. 完善阅读体验：目录、字体大小和更精确的章节导航。
-3. 实现设置页：默认打开页面、主题、快捷键等真实配置，并同步更新概述页文案。
-4. 增加书籍与本地数据导出/导入方案，明确 API Key 密文迁移时的密码处理和安全提示。
-5. 增加针对数据校验、分页边界、本地接口错误和加密/解密失败的测试。
-6. 如用户明确要求发布版本，再由用户确认后创建 commit/tag；在此之前只保留本地修改，不要 `git push`。
+## 关键实现位置
+
+- `src/main.jsx`：工作区名称修改、密码重加密、设置页组件和端口设置调用。
+- `src/styles.css`：设置页左右布局、设置行、表单及窄屏两列导航。
+- `vite.config.js`：`/api/storage`、`/api/books`、`/api/server`、`/api/startup`、`/api/shortcuts` 和端口加载逻辑。
+- `package.json`：纯 Vite 启动命令。
+- `restart-workbench.vbs`：Windows 零弹窗启动入口，也是前端修改端口后的重启入口。
+- `restart-workbench.cmd`：由 VBS 隐藏调用的内部重启实现。
+- `.workbench-data/server.json`：当前绑定端口。
+- `.workbench-data/startup.json`：开机自启动状态。
+
+## 数据位置
+
+- 工作区注册表和业务数据保存在 `.workbench-data/workbench.json`。
+- 书籍文件保存在 `.workbench-data/workspaces/{workspaceId}/books/`。
+- 浏览器 `localStorage` 不再作为配置来源；书籍文件缺失时仅保留 IndexedDB 兼容读取逻辑。
+- 快捷方式、端口配置和开机启动状态保存在项目 `.workbench-data/`。
+- `.workbench-data/` 已被 Git 忽略，不要删除或提交。
+- 改造前备份位于 `E:\vibe_coding\cc_workbench-backup-20260822-180659.zip`。
 
 ## 绝对不要再踩的坑
 
-- 不要把 API Key 明文写入 `localStorage`、日志、README、截图或 Git。只有 `encrypted.ciphertext` 和 `iv` 应持久化。
-- 不要把名称、服务商、请求地址误加密；用户明确要求只有 API Key 加密。
-- 不要删除或覆盖用户已有的 `.workbench-data`、浏览器 `localStorage` 或未提交修改来“清理环境”。
-- 不要使用 `git reset --hard`、`git checkout --` 等破坏性命令，也不要在用户未要求时提交、打 tag 或推送。
-- 不要把应用启动器实现成浏览器直接执行本地路径；必须经 Vite 本地接口和 Windows PowerShell 桥接。
-- 不要使用 `Start-Process -LiteralPath`；当前 Windows PowerShell 兼容实现是 `Start-Process -FilePath`，并通过环境变量传递路径避免命令注入式拼接。
-- 不要只返回“启动指令已发送”而不等待子进程结果；接口现在必须等待 PowerShell 退出并在失败时返回错误。
-- 不要自动启动用户真实软件来做测试。使用无害快捷方式、接口检查或手动确认。
-- 不要忘记三个资源模块都需要分页：提示词库、网址收藏、API Keys，当前统一每页 6 条。
-- 不要把示例数据当成用户数据覆盖写入；种子数据只能按标题补齐，必须保留用户记录。
-- 不要假设浏览器数据跨端口、跨浏览器存在；`localStorage` 按来源隔离。
-- 修改文件使用 `apply_patch`；先读代码和现有状态，再进行小范围修改，并在交付前运行 `npm run build` 和 `git diff --check`。
-
-## 关键命令和检查
-
-```powershell
-Set-Location E:\vibe_coding\cc_workbench
-npm install
-npm run dev -- --host 127.0.0.1
-npm run build
-git status --short
-git diff --check
-```
-
-当前 Git 仓库已初始化但没有 commit；本次文档修改也不要自动暂存。`.gitignore` 已忽略 `node_modules/`、`dist/` 和 `.workbench-data/`。
+- 不要自行验证；这条是用户最新明确要求。只有用户再次明确授权时才能运行验证。
+- 不要修改或清空用户的 `localStorage`、IndexedDB、`.workbench-data`。
+- 旧版浏览器配置不会自动迁移；需要先用旧版本导出加密配置，再导入新版本。
+- 不要把端口配置重新硬编码到 `package.json`，否则设置页保存的端口不会生效。
+- 不要让服务监听公网地址，只允许 `127.0.0.1`。
+- 不要只修改密码校验材料而不重新加密现有 API Key，否则旧 Key 会永久无法解密。
+- 不要把 API Key 明文写入 `localStorage`、日志、文档、截图或 Git。
+- 不要加密 API Key 的名称、服务商和请求地址；用户明确要求只有 Key 值加密。
+- 不要使用 `Start-Process -LiteralPath`；Windows PowerShell 兼容实现必须使用 `-FilePath`。
+- 不要自动启动用户真实软件做测试。
+- 不要恢复或重新引入已删除的 Electron 相关内容。
+- 不要使用破坏性 Git 命令，也不要在用户未要求时提交或推送。
