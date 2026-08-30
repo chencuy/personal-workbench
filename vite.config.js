@@ -459,6 +459,12 @@ const scheduleWorkbenchRestart = port => {
 
 const serverSettingsMiddleware = () => async (request, response, next) => {
   const requestUrl = new URL(request.url || '/', 'http://127.0.0.1')
+  if (requestUrl.pathname === '/api/server/stop') {
+    if (request.method !== 'POST') return sendJson(response, 405, { error: '不支持的请求方法' })
+    response.once('finish', () => setTimeout(() => process.exit(0), 150))
+    sendJson(response, 200, { stopping: true, message: '本地服务正在关闭' })
+    return
+  }
   if (requestUrl.pathname !== '/api/server') return next()
   const activePort = Number(request.socket.localPort) || configuredPort
   try {

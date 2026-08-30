@@ -37,6 +37,22 @@
 .book-import-button{position:relative;overflow:hidden}.book-import-button input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.book-import-button.is-loading{opacity:.7;cursor:wait}.book-file-type{font-family:'DM Mono',monospace;font-size:10px;color:#4778dc;background:#edf3ff;border-radius:5px;padding:5px 7px}.book-file-name{font-size:10px;color:#a0aaba;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:13px 0 0}.book-card-footer{margin-top:auto}.book-read-button{display:inline-flex!important;width:auto!important;padding:0 7px;gap:4px;font-size:10px!important;color:#326bd8!important;background:#edf3ff}.book-read-button:hover{background:#dfeaff!important}.book-file-note{display:flex;align-items:center;gap:8px;padding:10px 11px;border:1px solid #dde8fb;background:#f7faff;color:#6680b2;border-radius:7px;font-size:11px;margin:-7px 0 18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.reader-backdrop{position:fixed;inset:0;z-index:60;background:#edf0f5;display:flex;flex-direction:column}.reader-shell{height:100%;display:flex;flex-direction:column}.reader-header{height:74px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:#fff;border-bottom:1px solid #dfe5ed}.reader-header h2{font-size:16px;margin:3px 0 3px;color:#172337}.reader-header span:last-child{font-size:10px;color:#9aa6b5}.reader-kicker{font-family:'DM Mono',monospace;color:#6686c4;font-size:9px;letter-spacing:.12em}.reader-content{flex:1;min-height:0;overflow:auto;display:flex;justify-content:center;padding:34px}.text-reader{width:min(780px,100%);min-height:100%;background:#fff;padding:48px 58px;color:#3e4c60;font-size:15px;line-height:2;white-space:pre-wrap;box-shadow:0 5px 24px rgba(35,52,80,.06)}.reader-content iframe{width:100%;height:100%;border:0;background:#fff}.pdf-reader{padding:0}.epub-reader{width:min(900px,100%);height:100%;background:#fff;box-shadow:0 5px 24px rgba(35,52,80,.06)}.reader-error{margin:auto;display:flex;flex-direction:column;align-items:center;gap:10px;color:#8793a5;font-size:13px}.reader-error svg{color:#6a8fd9}
 @media (max-width:620px){.reader-header{height:66px;padding:0 16px}.reader-header h2{font-size:14px}.reader-content{padding:16px}.text-reader{padding:28px 22px;font-size:14px;line-height:1.9}.epub-reader{width:100%}}
 
+/* Keep the collapsed workspace control below the collapse toggle. */
+.app-shell.sidebar-collapsed .workspace-switch-wrap{display:none}
+.app-shell.sidebar-collapsed .nav{margin-top:48px}
+.app-shell.sidebar-collapsed .sidebar-collapse-button{left:10px;right:10px;width:auto;height:39px;border-radius:8px}
+.app-shell.sidebar-collapsed .sidebar-collapse-button{position:static;align-self:center;margin:48px auto 5px;width:100%;height:39px;padding:0;display:flex;align-items:center;justify-content:center;text-align:center}
+.app-shell.sidebar-collapsed .sidebar-collapse-button svg{display:block;margin:0 auto}
+.app-shell.sidebar-collapsed .nav{margin-top:0}
+.overview-stop-service{height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid #f0d4d4;border-radius:7px;color:#c65e63;background:#fffafa;font-size:11px;white-space:nowrap;transition:.15s}
+.overview-stop-service:hover:not(:disabled){border-color:#e4b6b6;background:#fff3f3;color:#b84c52}
+.overview-stop-service:disabled{opacity:.55;cursor:wait}
+@media (max-width:620px){.overview-tools-heading{align-items:center;gap:10px}.overview-stop-service{padding:0 8px;font-size:10px}}
+
+/* Match the collapsed toggle to the exact nav-item box. */
+.app-shell.sidebar-collapsed .sidebar-collapse-button{position:static!important;left:auto!important;right:auto!important;top:auto!important;align-self:stretch!important;width:100%!important;min-width:0!important;height:39px!important;min-height:39px!important;margin:48px 0 5px!important;padding:0!important;display:flex!important;align-items:center!important;justify-content:center!important}
+.app-shell.sidebar-collapsed .sidebar-collapse-button svg{margin:0 auto!important}
+
 /* Compact book cards match the prompt card density. */
 .book-card {
   min-height: 184px;
