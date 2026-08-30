@@ -1,5 +1,6 @@
 import { createReadStream, createWriteStream, promises as fs, readFileSync } from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import net from 'node:net'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
@@ -428,6 +429,15 @@ const startupMiddleware = () => async (request, response, next) => {
   }
 }
 
+const systemMiddleware = () => (request, response, next) => {
+  const requestUrl = new URL(request.url || '/', 'http://127.0.0.1')
+  if (requestUrl.pathname !== '/api/system') return next()
+  if (request.method !== 'GET') return sendJson(response, 405, { error: '不支持的请求方法' })
+  let username = process.env.USERNAME || process.env.USER || ''
+  try { username = os.userInfo().username || username } catch { /* system username is optional */ }
+  return sendJson(response, 200, { username })
+}
+
 const portAvailable = port => new Promise(resolve => {
   const probe = net.createServer()
   probe.unref()
@@ -492,6 +502,7 @@ export default defineConfig({
         server.middlewares.use(bookMiddleware())
         server.middlewares.use(serverSettingsMiddleware())
         server.middlewares.use(startupMiddleware())
+        server.middlewares.use(systemMiddleware())
         server.middlewares.use(shortcutMiddleware())
       },
       configurePreviewServer(server) {
@@ -499,6 +510,7 @@ export default defineConfig({
         server.middlewares.use(bookMiddleware())
         server.middlewares.use(serverSettingsMiddleware())
         server.middlewares.use(startupMiddleware())
+        server.middlewares.use(systemMiddleware())
         server.middlewares.use(shortcutMiddleware())
       }
     }

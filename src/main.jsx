@@ -4,7 +4,8 @@ import {
   AppWindow, ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronDown, Clipboard, Copy, Eye, EyeOff,
   Database, ExternalLink, FolderOpen, Grid2X2, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Menu,
   MoreHorizontal, Pencil, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles,
-  Trash2, UnlockKeyhole, Upload, UserRound, X, Zap, PanelLeftClose, PanelLeftOpen, Download, FileUp, Power
+  Trash2, UnlockKeyhole, Upload, UserRound, X, Zap, PanelLeftClose, PanelLeftOpen, Download, FileUp, Power,
+  Timer, Pause, RotateCcw, ChevronUp, Globe2
 } from 'lucide-react'
 import './styles.css'
 
@@ -222,9 +223,27 @@ const navGroups = [
   ] },
   { label: '工具', items: [
     { id: 'apps', label: '应用启动器', icon: AppWindow },
-    { id: 'books', label: '个人书库', icon: BookOpen }
+    { id: 'books', label: '个人书库', icon: BookOpen },
+    { id: 'pomodoro', label: '番茄钟', icon: Timer }
   ] }
 ]
+
+const LANGUAGE_OPTIONS = [
+  { id: 'zh', label: '中文' },
+  { id: 'en', label: 'English' },
+  { id: 'ja', label: '日本語' }
+]
+const LANGUAGE_LABELS = {
+  zh: { overview: '概述', prompts: '提示词库', links: '网址收藏', keys: 'API Keys', apps: '应用启动器', books: '个人书库', pomodoro: '番茄钟', settings: '设置' },
+  en: { overview: 'Overview', prompts: 'Prompt Library', links: 'Bookmarks', keys: 'API Keys', apps: 'App Launcher', books: 'Book Library', pomodoro: 'Pomodoro', settings: 'Settings' },
+  ja: { overview: '概要', prompts: 'プロンプト', links: 'ブックマーク', keys: 'API Keys', apps: 'アプリランチャー', books: '本棚', pomodoro: 'ポモドーロ', settings: '設定' }
+}
+const storedLanguage = () => {
+  if (typeof window === 'undefined') return 'zh'
+  const value = window.localStorage.getItem('workbench-language')
+  return LANGUAGE_OPTIONS.some(option => option.id === value) ? value : 'zh'
+}
+const languageLabel = (id, language) => LANGUAGE_LABELS[language]?.[id] || LANGUAGE_LABELS.zh[id] || id
 
 const getWorkspaces = () => {
   return Array.isArray(portableStorage.workspaces) ? portableStorage.workspaces : []
@@ -286,6 +305,8 @@ function App() {
 
 function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey, onReplaceWorkspace }) {
   const [active, setActive] = useState('overview')
+  const [language, setLanguage] = useState(storedLanguage)
+  const [systemUsername, setSystemUsername] = useState('')
   const [prompts, setPrompts] = useState(() => getInitialPrompts(workspace.id))
   const [links, setLinks] = useState(() => getInitialLinks(workspace.id))
   const [books, setBooks] = useState(() => getInitialBooks(workspace.id))
@@ -305,6 +326,18 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
   const [bookPage, setBookPage] = useState(1)
   const promptPageSize = useAdaptivePageSize('prompt')
   const bookPageSize = useAdaptivePageSize('book')
+
+  useEffect(() => {
+    fetch('/api/system').then(response => response.ok ? response.json() : null).then(result => {
+      if (result?.username) setSystemUsername(String(result.username))
+    }).catch(() => {})
+  }, [])
+  useEffect(() => {
+    const handleLanguageChange = event => setLanguage(event.detail?.language || storedLanguage())
+    window.addEventListener('workbench-language-change', handleLanguageChange)
+    document.documentElement.lang = language === 'en' ? 'en' : language === 'ja' ? 'ja' : 'zh-CN'
+    return () => window.removeEventListener('workbench-language-change', handleLanguageChange)
+  }, [language])
 
   useEffect(() => { persistWorkspaceData(workspace.id, 'prompts', prompts).catch(() => setToast('提示词保存失败，请重试')) }, [workspace.id, prompts])
   useEffect(() => { persistWorkspaceData(workspace.id, 'links', links).catch(() => setToast('网址保存失败，请重试')) }, [workspace.id, links])
@@ -506,14 +539,14 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
       <button className="sidebar-collapse-button" title={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'} aria-label={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'} onClick={() => setSidebarCollapsed(value => !value)}>{sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</button>
       <WorkspaceSwitcher workspace={workspace} workspaces={workspaces} onSwitch={onSwitchWorkspace} onCreate={() => onSwitchWorkspace('__create__')} />
       <nav className="nav">
-        {navGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(item => <button key={item.id} className={`nav-item ${active === item.id ? 'active' : ''}`} onClick={() => { setReaderBook(null); setActive(item.id); setSidebarOpen(false) }}><item.icon size={17} /><span>{item.label}</span>{item.id === 'prompts' && <span className="nav-count">{prompts.length}</span>}</button>)}</div>)}
+        {navGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{language === 'en' ? (group.label === '工作台' ? 'WORKSPACE' : group.label === '资源中心' ? 'RESOURCES' : 'TOOLS') : language === 'ja' ? (group.label === '工作台' ? 'ワークスペース' : group.label === '资源中心' ? 'リソース' : 'ツール') : group.label}</div>{group.items.map(item => <button key={item.id} className={`nav-item ${active === item.id ? 'active' : ''}`} onClick={() => { setReaderBook(null); setActive(item.id); setSidebarOpen(false) }}><item.icon size={17} /><span>{languageLabel(item.id, language)}</span>{item.id === 'prompts' && <span className="nav-count">{prompts.length}</span>}</button>)}</div>)}
       </nav>
-       <div className="sidebar-footer"><button className={`nav-item ${active === 'settings' ? 'active' : ''}`} onClick={() => { setReaderBook(null); setActive('settings'); setSidebarOpen(false) }}><Settings2 size={17} /><span>设置</span></button></div>
+       <div className="sidebar-footer"><button className={`nav-item ${active === 'settings' ? 'active' : ''}`} onClick={() => { setReaderBook(null); setActive('settings'); setSidebarOpen(false) }}><Settings2 size={17} /><span>{languageLabel('settings', language)}</span></button></div>
     </aside>
     {sidebarOpen && <button className="backdrop" aria-label="关闭菜单" onClick={() => setSidebarOpen(false)} />}
     <main className="main-content">
-      <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><div className="breadcrumbs"><span>工作台</span><span className="slash">/</span><strong>{active === 'overview' ? '概述' : active === 'prompts' ? '提示词库' : active === 'settings' ? '设置' : navGroups.flatMap(g => g.items).find(i => i.id === active)?.label}</strong></div><div className="topbar-actions"><button className="icon-button global-search-trigger" title="全局搜索" aria-label="全局搜索" onClick={() => setGlobalSearchOpen(true)}><Search size={18} /></button></div></header>
-       {readerBook ? <BookReader workspaceId={workspace.id} book={readerBook} onClose={() => setReaderBook(null)} onLocation={updateBookLocation} /> : active === 'overview' ? <Overview prompts={prompts} links={links} apiKeys={apiKeys} onNavigate={setActive} onCopy={copyPrompt} /> : active === 'prompts' ? <PromptLibrary prompts={pagedPrompts} allPrompts={prompts} filteredCount={filtered.length} page={page} pageCount={pageCount} setPage={setPage} tags={tags} query={query} setQuery={setQuery} selectedTag={selectedTag} setSelectedTag={setSelectedTag} onCreate={openCreate} onEdit={openEdit} onDelete={deletePrompt} onCopy={copyPrompt} /> : active === 'links' ? <LinksLibrary links={links} onCreate={() => setModal({ mode: 'link-create', item: { title: '', url: '', content: '', tags: [] } })} onEdit={link => setModal({ mode: 'link-edit', item: { ...link, tags: [...link.tags] } })} onDelete={deleteLink} /> : active === 'keys' ? <ApiKeyLibrary apiKeys={apiKeys} encryptionKey={encryptionKey} onCreate={() => setModal({ mode: 'key-create', item: { name: '', provider: '', value: '', requestUrl: '' } })} onEdit={async record => { try { setModal({ mode: 'key-edit', item: { ...record, requestUrl: record.requestUrl || '', value: await decryptApiValue(encryptionKey, record.encrypted) } }) } catch { setToast('无法解密该 API Key') } }} onDelete={deleteApiKey} /> : active === 'books' ? <BookLibrary books={pagedBooks} allBooks={books} filteredCount={filteredBooks.length} page={bookPage} pageCount={bookPageCount} setPage={setBookPage} query={bookQuery} setQuery={setBookQuery} type={bookType} setType={setBookType} importing={bookImporting} onImport={importBook} onEdit={openEditBook} onDelete={deleteBook} onRead={setReaderBook} /> : active === 'apps' ? <AppLauncher workspaceId={workspace.id} /> : active === 'settings' ? <SettingsPage workspace={workspace} startupEnabled={startupEnabled} serverPort={serverPort} onToggleStartup={toggleStartup} onSaveServerPort={saveServerPort} onRenameWorkspace={renameWorkspace} onChangePassword={changeWorkspacePassword} onExport={exportWorkspace} onImport={file => importWorkspace(file)} /> : <Placeholder title={navGroups.flatMap(g => g.items).find(i => i.id === active)?.label} icon={navGroups.flatMap(g => g.items).find(i => i.id === active)?.icon} />}
+      <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><div className="breadcrumbs"><span>{language === 'en' ? 'Workspace' : language === 'ja' ? 'ワークスペース' : '工作台'}</span><span className="slash">/</span><strong>{languageLabel(active, language)}</strong></div><div className="topbar-actions"><button className="icon-button global-search-trigger" title={language === 'en' ? 'Global search' : language === 'ja' ? 'グローバル検索' : '全局搜索'} aria-label={language === 'en' ? 'Global search' : language === 'ja' ? 'グローバル検索' : '全局搜索'} onClick={() => setGlobalSearchOpen(true)}><Search size={18} /></button></div></header>
+       {readerBook ? <BookReader workspaceId={workspace.id} book={readerBook} onClose={() => setReaderBook(null)} onLocation={updateBookLocation} /> : active === 'overview' ? <Overview language={language} username={systemUsername} prompts={prompts} links={links} apiKeys={apiKeys} onNavigate={setActive} onCopy={copyPrompt} /> : active === 'prompts' ? <PromptLibrary language={language} prompts={pagedPrompts} allPrompts={prompts} filteredCount={filtered.length} page={page} pageCount={pageCount} setPage={setPage} tags={tags} query={query} setQuery={setQuery} selectedTag={selectedTag} setSelectedTag={setSelectedTag} onCreate={openCreate} onEdit={openEdit} onDelete={deletePrompt} onCopy={copyPrompt} /> : active === 'links' ? <LinksLibrary language={language} links={links} onCreate={() => setModal({ mode: 'link-create', item: { title: '', url: '', content: '', tags: [] } })} onEdit={link => setModal({ mode: 'link-edit', item: { ...link, tags: [...link.tags] } })} onDelete={deleteLink} /> : active === 'keys' ? <ApiKeyLibrary language={language} apiKeys={apiKeys} encryptionKey={encryptionKey} onCreate={() => setModal({ mode: 'key-create', item: { name: '', provider: '', value: '', requestUrl: '' } })} onEdit={async record => { try { setModal({ mode: 'key-edit', item: { ...record, requestUrl: record.requestUrl || '', value: await decryptApiValue(encryptionKey, record.encrypted) } }) } catch { setToast('无法解密该 API Key') } }} onDelete={deleteApiKey} /> : active === 'books' ? <BookLibrary language={language} books={pagedBooks} allBooks={books} filteredCount={filteredBooks.length} page={bookPage} pageCount={bookPageCount} setPage={setBookPage} query={bookQuery} setQuery={setBookQuery} type={bookType} setType={setBookType} importing={bookImporting} onImport={importBook} onEdit={openEditBook} onDelete={deleteBook} onRead={setReaderBook} /> : active === 'apps' ? <AppLauncher language={language} workspaceId={workspace.id} /> : active === 'pomodoro' ? <PomodoroTimer language={language} /> : active === 'settings' ? <SettingsPage language={language} workspace={workspace} startupEnabled={startupEnabled} serverPort={serverPort} onToggleStartup={toggleStartup} onSaveServerPort={saveServerPort} onRenameWorkspace={renameWorkspace} onChangePassword={changeWorkspacePassword} onExport={exportWorkspace} onImport={file => importWorkspace(file)} /> : <Placeholder title={languageLabel(active, language)} icon={navGroups.flatMap(g => g.items).find(i => i.id === active)?.icon} />}
     </main>
       {modal?.mode === 'create' || modal?.mode === 'edit' ? <PromptModal modal={modal} onClose={() => setModal(null)} onSave={savePrompt} /> : null}
       {modal?.mode?.startsWith('link-') ? <LinkModal modal={modal} onClose={() => setModal(null)} onSave={saveLink} /> : null}
@@ -531,6 +564,7 @@ const searchModules = [
   { key: 'module-keys', kind: 'module', section: 'keys', title: 'API Keys', detail: 'API Key 管理', keywords: '密钥 key 服务商', icon: KeyRound },
   { key: 'module-apps', kind: 'module', section: 'apps', title: '应用启动器', detail: '本机应用快捷方式', keywords: '软件 程序 快捷方式 launcher', icon: AppWindow },
   { key: 'module-books', kind: 'module', section: 'books', title: '个人书库', detail: '本地书籍和阅读', keywords: 'book epub pdf 阅读', icon: BookOpen },
+  { key: 'module-pomodoro', kind: 'module', section: 'pomodoro', title: '番茄钟', detail: '专注计时工具', keywords: '番茄钟 pomodoro 专注 计时 timer', icon: Timer },
   { key: 'module-settings', kind: 'module', section: 'settings', title: '设置', detail: '工作台设置', keywords: 'settings 配置', icon: Settings2 }
 ]
 
@@ -570,9 +604,182 @@ function GlobalSearch({ workspaceId, prompts, links, apiKeys, books, onClose, on
   </div>
 }
 
-function Overview({ prompts, onNavigate, onCopy }) { return <section className="page overview-page"><div className="page-heading"><div><p className="eyebrow">GOOD MORNING, CC</p><h1>今天也高效工作。</h1><p className="subheading">把常用的工具和资源，放在触手可及的地方。</p></div><div className="date-chip">8月 21日，星期五 <span>·</span> 09:48</div></div><div className="quick-grid"><button className="quick-card accent" onClick={() => onNavigate('prompts')}><div className="quick-icon"><Sparkles size={19} /></div><div><strong>提示词库</strong><span>快速查找和复用你的提示词</span></div><ArrowUpRight size={17} /></button><button className="quick-card" onClick={() => onNavigate('apps')}><div className="quick-icon neutral"><Zap size={19} /></div><div><strong>应用启动器</strong><span>一键打开常用软件组合</span></div><ArrowUpRight size={17} /></button><button className="quick-card" onClick={() => onNavigate('links')}><div className="quick-icon neutral"><ArrowUpRight size={19} /></div><div><strong>网址收藏</strong><span>保存常用网站和工作资料</span></div><ArrowUpRight size={17} /></button></div><div className="section-head"><div><h2>最近使用的提示词</h2><span>最近编辑和使用的内容</span></div><button className="text-button" onClick={() => onNavigate('prompts')}>查看全部 <ArrowUpRight size={15} /></button></div><div className="recent-list">{prompts.slice(0, 3).map(item => <div className="recent-row" key={item.id}><div className="recent-symbol"><Clipboard size={16} /></div><div className="recent-info"><strong>{item.title}</strong><span>{item.content}</span></div><div className="row-tags">{item.tags.slice(0, 2).map(tag => <span key={tag}>{tag}</span>)}</div><span className="recent-time">{item.updatedAt}</span><button className="row-copy" title="复制" onClick={() => onCopy(item)}><Copy size={16} /></button></div>)}</div><div className="overview-bottom"><div className="tip-block"><div className="tip-icon"><Sparkles size={18} /></div><div><strong>让工作台适应你的习惯</strong><p>你可以在设置中调整默认打开页面、主题和快捷键。</p></div><button className="small-button">去设置 <ArrowUpRight size={14} /></button></div><div className="local-note"><KeyRound size={16} /><span>所有数据均保存在本地设备，安全且私密</span></div></div></section> }
+function Overview({ language = 'zh', username, prompts, links, apiKeys, onNavigate, onCopy }) {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const locale = language === 'en' ? 'en-US' : language === 'ja' ? 'ja-JP' : 'zh-CN'
+  const time = now.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  const date = now.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+  const hour = now.getHours()
+  const greeting = language === 'en'
+    ? (hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 18 ? 'Good afternoon' : 'Good evening')
+    : language === 'ja'
+      ? (hour >= 5 && hour < 12 ? 'おはようございます' : hour >= 12 && hour < 18 ? 'こんにちは' : 'こんばんは')
+      : (hour >= 5 && hour < 12 ? '早上好' : hour >= 12 && hour < 18 ? '下午好' : '晚上好')
+  const copy = language === 'en'
+    ? { tools: 'Quick tools', toolsHint: 'Choose a tool to get started', recent: 'Recently used prompts', recentHint: 'Recently edited and used', all: 'View all', prompt: 'Prompt Library', promptDetail: 'Find and reuse prompts', links: 'Bookmarks', linksDetail: 'Open saved websites and resources', keys: 'API Keys', keysDetail: 'Manage encrypted API keys', apps: 'App Launcher', appsDetail: 'Launch apps on this computer', books: 'Book Library', booksDetail: 'Continue reading local books', pomodoro: 'Pomodoro', pomodoroDetail: 'Start a focused session', content: 'items', bookmark: 'bookmarks', keysMeta: 'keys', local: 'Local tools' }
+    : language === 'ja'
+      ? { tools: 'ツールショートカット', toolsHint: 'ツールを選んで開始', recent: '最近使用したプロンプト', recentHint: '最近編集・使用した内容', all: 'すべて表示', prompt: 'プロンプト', promptDetail: 'プロンプトを検索・再利用', links: 'ブックマーク', linksDetail: '保存したサイトと資料を開く', keys: 'API Keys', keysDetail: '暗号化キーを管理', apps: 'アプリランチャー', appsDetail: 'このPCのアプリを起動', books: '本棚', booksDetail: 'ローカル書籍を読む', pomodoro: 'ポモドーロ', pomodoroDetail: '集中セッションを開始', content: '件', bookmark: '件', keysMeta: '個', local: 'ローカルツール' }
+      : { tools: '工具快捷入口', toolsHint: '选择一个工具，立即开始', recent: '最近使用的提示词', recentHint: '最近编辑和使用的内容', all: '查看全部', prompt: '提示词库', promptDetail: '查找和复用提示词', links: '网址收藏', linksDetail: '打开常用网站和资料', keys: 'API Keys', keysDetail: '管理加密的接口密钥', apps: '应用启动器', appsDetail: '一键打开本机应用', books: '个人书库', booksDetail: '继续阅读本地书籍', pomodoro: '番茄钟', pomodoroDetail: '开始一段专注时间', content: '条内容', bookmark: '个网址', keysMeta: '个密钥', local: '专注计时' }
+  const toolShortcuts = [
+    { id: 'prompts', title: copy.prompt, detail: copy.promptDetail, icon: Sparkles, meta: `${prompts.length} ${copy.content}`, tone: 'accent' },
+    { id: 'links', title: copy.links, detail: copy.linksDetail, icon: ArrowUpRight, meta: `${links.length} ${copy.bookmark}` },
+    { id: 'keys', title: copy.keys, detail: copy.keysDetail, icon: KeyRound, meta: `${apiKeys.length} ${copy.keysMeta}` },
+    { id: 'apps', title: copy.apps, detail: copy.appsDetail, icon: AppWindow, meta: copy.local },
+    { id: 'books', title: copy.books, detail: copy.booksDetail, icon: BookOpen, meta: copy.local },
+    { id: 'pomodoro', title: copy.pomodoro, detail: copy.pomodoroDetail, icon: Timer, meta: copy.local, tone: 'focus' }
+  ]
+  return <section className="page overview-page">
+    <div className="overview-hero">
+      <div className="overview-hero-copy"><p className="overview-greeting">{greeting}, {username || (language === 'en' ? 'there' : language === 'ja' ? 'ユーザー' : '朋友')}</p><strong className="overview-time">{time}</strong><span className="overview-date">{date}</span></div>
+    </div>
+    <div className="overview-tools-heading"><div><h2>{copy.tools}</h2><span>{copy.toolsHint}</span></div></div>
+    <div className="overview-tools-grid">{toolShortcuts.map(tool => <button key={tool.id} className={`overview-tool-card ${tool.tone || ''}`} onClick={() => onNavigate(tool.id)}><span className="overview-tool-icon"><tool.icon size={19} /></span><span className="overview-tool-main"><strong>{tool.title}</strong><span>{tool.detail}</span></span><span className="overview-tool-meta">{tool.meta}</span><ArrowUpRight size={16} /></button>)}</div>
+    <div className="section-head overview-recent-heading"><div><h2>{copy.recent}</h2><span>{copy.recentHint}</span></div><button className="text-button" onClick={() => onNavigate('prompts')}>{copy.all} <ArrowUpRight size={15} /></button></div>
+    <div className="recent-list">{prompts.slice(0, 3).map(item => <div className="recent-row" key={item.id}><div className="recent-symbol"><Clipboard size={16} /></div><div className="recent-info"><strong>{item.title}</strong><span>{item.content}</span></div><div className="row-tags">{item.tags.slice(0, 2).map(tag => <span key={tag}>{tag}</span>)}</div><span className="recent-time">{item.updatedAt}</span><button className="row-copy" title="复制" onClick={() => onCopy(item)}><Copy size={16} /></button></div>)}</div>
+  </section>
+}
 
-function PromptLibrary({ prompts, allPrompts, filteredCount, page, pageCount, setPage, tags, query, setQuery, selectedTag, setSelectedTag, onCreate, onEdit, onDelete, onCopy }) { return <section className="page prompts-page"><div className="page-heading library-heading"><div><p className="eyebrow">RESOURCE CENTER</p><h1>提示词库</h1><p className="subheading">沉淀你的思考方式，让每一次提问都更有质量。</p></div><button className="primary-button" onClick={onCreate}><Plus size={17} />新建提示词</button></div><div className="library-toolbar"><div className="search-box"><Search size={17} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索标题、内容或标签..." /><kbd>⌘ K</kbd></div><div className="tag-filter">{tags.slice(0, 5).map(tag => <button key={tag} className={selectedTag === tag ? 'selected' : ''} onClick={() => setSelectedTag(tag)}>{tag}</button>)}{tags.length > 5 && <button className="tag-more"><MoreHorizontal size={16} /></button>}</div></div><div className="library-meta"><span>全部提示词 <strong>{allPrompts.length}</strong></span><span className="meta-divider" /><span>{filteredCount === allPrompts.length ? '按最近编辑排序' : `筛选出 ${filteredCount} 条结果`}</span></div><div className="prompt-grid">{prompts.map(item => <PromptCard key={item.id} item={item} onEdit={onEdit} onDelete={onDelete} onCopy={onCopy} />)}{prompts.length === 0 && <div className="empty-state"><Search size={24} /><strong>没有找到匹配的提示词</strong><span>试试其他关键词或标签</span></div>}</div>{pageCount > 1 && <ResourcePagination page={page} pageCount={pageCount} setPage={setPage} />}</section> }
+const POMODORO_OPTIONS = [15, 25, 45, 60]
+
+function PomodoroTimer({ language = 'zh' }) {
+  const [durationMinutes, setDurationMinutes] = useState(25)
+  const [remainingSeconds, setRemainingSeconds] = useState(25 * 60)
+  const [running, setRunning] = useState(false)
+  const [completed, setCompleted] = useState(false)
+  const [customValue, setCustomValue] = useState('')
+  const [customUnit, setCustomUnit] = useState('minutes')
+  const [customError, setCustomError] = useState('')
+  const endTimeRef = useRef(0)
+  const copy = language === 'en' ? { title: 'Pomodoro', desc: 'Use a focused session to finish the most important task.', ready: 'Ready to start', running: 'Focusing now', done: 'Session complete', good: 'Well done', focus: 'Focus time', start: 'Start focus', pause: 'Pause', again: 'Start again', reset: 'Reset', choose: 'Choose session length', chooseHint: 'Pick a duration that fits the task before starting.', minutes: 'minutes', custom: 'Custom duration', input: 'Enter time', apply: 'Apply', note: 'The timer keeps running while you switch tools.' } : language === 'ja' ? { title: 'ポモドーロ', desc: '集中時間を使って、重要なタスクを終わらせます。', ready: '開始準備完了', running: '集中しています', done: 'セッション完了', good: 'お疲れさまでした', focus: '集中時間', start: '集中開始', pause: '一時停止', again: 'もう一度', reset: 'リセット', choose: '時間を選択', chooseHint: '開始前にタスクに合う時間を選びます。', minutes: '分', custom: 'カスタム時間', input: '時間を入力', apply: '適用', note: 'ツールを切り替えてもタイマーは継続します。' } : { title: '番茄钟', desc: '用一段专注时间，完成眼前最重要的事。', ready: '准备开始', running: '正在专注', done: '本轮专注完成', good: '做得很好', focus: '专注时间', start: '开始专注', pause: '暂停', again: '再来一轮', reset: '重置', choose: '选择计时时间', chooseHint: '开始前选择一段适合当前任务的专注时长。', minutes: '分钟', custom: '自定义时长', input: '输入时间', apply: '应用', note: '计时器会在当前页面保持运行，切换工具不会丢失本轮状态。' }
+
+  useEffect(() => {
+    if (!running) return undefined
+    const tick = () => {
+      const next = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000))
+      setRemainingSeconds(next)
+      if (next === 0) {
+        setRunning(false)
+        setCompleted(true)
+      }
+    }
+    tick()
+    const interval = window.setInterval(tick, 250)
+    return () => window.clearInterval(interval)
+  }, [running])
+
+  const chooseDuration = minutes => {
+    if (running) return
+    setDurationMinutes(minutes)
+    setRemainingSeconds(minutes * 60)
+    setCompleted(false)
+    setCustomError('')
+  }
+
+  const applyCustomDuration = event => {
+    event.preventDefault()
+    if (running) return
+    const value = Number(customValue)
+    if (!Number.isInteger(value) || value < 1) return setCustomError('请输入大于等于 1 的整数')
+    const minutes = customUnit === 'hours' ? value * 60 : value
+    if (minutes > 24 * 60) return setCustomError('单次计时不能超过 24 小时')
+    const normalizedMinutes = Math.max(1, Math.round(minutes))
+    setDurationMinutes(normalizedMinutes)
+    setRemainingSeconds(normalizedMinutes * 60)
+    setCompleted(false)
+    setCustomError('')
+  }
+
+  const adjustCustomValue = direction => {
+    if (running) return
+    const current = Number(customValue)
+    const base = Number.isFinite(current) && current >= 1 ? current : 1
+    const step = customUnit === 'hours' ? 1 : 10
+    const max = customUnit === 'hours' ? 24 : 1440
+    const next = Math.min(max, Math.max(1, Math.round(base) + direction * step))
+    setCustomValue(String(next))
+    setCustomError('')
+  }
+
+  const toggleTimer = () => {
+    if (remainingSeconds <= 0) {
+      setRemainingSeconds(durationMinutes * 60)
+      setCompleted(false)
+      endTimeRef.current = Date.now() + durationMinutes * 60 * 1000
+      setRunning(true)
+      return
+    }
+    if (running) {
+      setRemainingSeconds(Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000)))
+      setRunning(false)
+      return
+    }
+    endTimeRef.current = Date.now() + remainingSeconds * 1000
+    setCompleted(false)
+    setRunning(true)
+  }
+
+  const resetTimer = () => {
+    setRunning(false)
+    setCompleted(false)
+    setRemainingSeconds(durationMinutes * 60)
+    endTimeRef.current = 0
+  }
+
+  const minutes = String(Math.floor(remainingSeconds / 60)).padStart(2, '0')
+  const seconds = String(remainingSeconds % 60).padStart(2, '0')
+  const totalSeconds = durationMinutes * 60
+  const progress = totalSeconds ? (totalSeconds - remainingSeconds) / totalSeconds : 0
+  const circumference = 2 * Math.PI * 108
+  const dashOffset = circumference * (1 - progress)
+
+  return <section className="page pomodoro-page">
+    <div className="page-heading library-heading">
+      <div><p className="eyebrow">FOCUS TOOL</p><h1>{copy.title}</h1><p className="subheading">{copy.desc}</p></div>
+    </div>
+    <div className="pomodoro-layout">
+      <div className="pomodoro-panel">
+        <div className="pomodoro-status"><span className={`pomodoro-status-dot ${running ? 'is-running' : ''}`} />{completed ? copy.done : running ? copy.running : copy.ready}</div>
+        <div className="pomodoro-dial" aria-label={`剩余 ${minutes} 分 ${seconds} 秒`}>
+          <svg viewBox="0 0 240 240" aria-hidden="true">
+            <circle className="pomodoro-track" cx="120" cy="120" r="108" />
+            <circle className="pomodoro-progress" cx="120" cy="120" r="108" style={{ strokeDasharray: circumference, strokeDashoffset: dashOffset }} />
+          </svg>
+          <div className="pomodoro-time"><strong>{minutes}:{seconds}</strong><span>{completed ? copy.good : copy.focus}</span></div>
+        </div>
+        <div className="pomodoro-actions">
+          <button className="primary-button pomodoro-start" onClick={toggleTimer}>{running ? <><Pause size={17} />{copy.pause}</> : <><Play size={17} />{remainingSeconds === 0 ? copy.again : copy.start}</>}</button>
+          <button className="secondary-button pomodoro-reset" onClick={resetTimer} title={copy.reset}><RotateCcw size={16} />{copy.reset}</button>
+        </div>
+      </div>
+      <div className="pomodoro-settings">
+        <div className="pomodoro-section-heading"><span className="pomodoro-kicker">SESSION LENGTH</span><h2>{copy.choose}</h2><p>{copy.chooseHint}</p></div>
+        <div className="pomodoro-options" role="group" aria-label={copy.choose}>{POMODORO_OPTIONS.map(option => <button key={option} className={durationMinutes === option ? 'selected' : ''} onClick={() => chooseDuration(option)} disabled={running} aria-pressed={durationMinutes === option}><strong>{option}</strong><span>{copy.minutes}</span></button>)}</div>
+        <form className="pomodoro-custom" onSubmit={applyCustomDuration}>
+          <label htmlFor="pomodoro-custom-value">{copy.custom}</label>
+          <div className="pomodoro-custom-controls">
+            <div className="pomodoro-number-control">
+              <input id="pomodoro-custom-value" type="number" min="1" max={customUnit === 'hours' ? '24' : '1440'} step="1" value={customValue} onChange={event => { setCustomValue(event.target.value); setCustomError('') }} placeholder={copy.input} disabled={running} />
+              <div className="pomodoro-number-stepper"><button type="button" aria-label="增加自定义时长" onClick={() => adjustCustomValue(1)} disabled={running}><ChevronUp size={14} /></button><button type="button" aria-label="减少自定义时长" onClick={() => adjustCustomValue(-1)} disabled={running}><ChevronDown size={14} /></button></div>
+            </div>
+            <select value={customUnit} onChange={event => { setCustomUnit(event.target.value); setCustomError('') }} disabled={running} aria-label={copy.custom}><option value="minutes">{language === 'en' ? 'Minutes' : language === 'ja' ? '分' : '分钟'}</option><option value="hours">{language === 'en' ? 'Hours' : language === 'ja' ? '時間' : '小时'}</option></select>
+            <button className="secondary-button" type="submit" disabled={running || !customValue.trim()}>{copy.apply}</button>
+          </div>
+          {customError && <span className="pomodoro-custom-error">{customError}</span>}
+        </form>
+        <div className="pomodoro-note"><Timer size={17} /><span>{copy.note}</span></div>
+      </div>
+    </div>
+  </section>
+}
+
+function PromptLibrary({ language = 'zh', prompts, allPrompts, filteredCount, page, pageCount, setPage, tags, query, setQuery, selectedTag, setSelectedTag, onCreate, onEdit, onDelete, onCopy }) {
+  const copy = language === 'en' ? { title: 'Prompt Library', desc: 'Capture your thinking and improve every prompt.', create: 'New prompt', search: 'Search title, content or tags...', all: 'All prompts', sorted: 'Sorted by recent edits', filtered: count => `${count} results`, empty: 'No matching prompts', emptyHint: 'Try another keyword or tag' } : language === 'ja' ? { title: 'プロンプト', desc: '考え方を蓄積し、質問の質を高めます。', create: '新規プロンプト', search: 'タイトル、内容、タグを検索...', all: 'すべてのプロンプト', sorted: '最近の編集順', filtered: count => `${count} 件`, empty: '一致するプロンプトがありません', emptyHint: '別のキーワードやタグを試してください' } : { title: '提示词库', desc: '沉淀你的思考方式，让每一次提问都更有质量。', create: '新建提示词', search: '搜索标题、内容或标签...', all: '全部提示词', sorted: '按最近编辑排序', filtered: count => `筛选出 ${count} 条结果`, empty: '没有找到匹配的提示词', emptyHint: '试试其他关键词或标签' }
+  return <section className="page prompts-page"><div className="page-heading library-heading"><div><p className="eyebrow">RESOURCE CENTER</p><h1>{copy.title}</h1><p className="subheading">{copy.desc}</p></div><button className="primary-button" onClick={onCreate}><Plus size={17} />{copy.create}</button></div><div className="library-toolbar"><div className="search-box"><Search size={17} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder={copy.search} /><kbd>⌘ K</kbd></div><div className="tag-filter">{tags.slice(0, 5).map(tag => <button key={tag} className={selectedTag === tag ? 'selected' : ''} onClick={() => setSelectedTag(tag)}>{tag === '全部' ? (language === 'en' ? 'All' : language === 'ja' ? 'すべて' : tag) : tag}</button>)}{tags.length > 5 && <button className="tag-more"><MoreHorizontal size={16} /></button>}</div></div><div className="library-meta"><span>{copy.all} <strong>{allPrompts.length}</strong></span><span className="meta-divider" /><span>{filteredCount === allPrompts.length ? copy.sorted : copy.filtered(filteredCount)}</span></div><div className="prompt-grid">{prompts.map(item => <PromptCard key={item.id} language={language} item={item} onEdit={onEdit} onDelete={onDelete} onCopy={onCopy} />)}{prompts.length === 0 && <div className="empty-state"><Search size={24} /><strong>{copy.empty}</strong><span>{copy.emptyHint}</span></div>}</div>{pageCount > 1 && <ResourcePagination page={page} pageCount={pageCount} setPage={setPage} />}</section>
+}
 
 function WorkspaceSwitcher({ workspace, workspaces, onSwitch, onCreate }) {
   const [open, setOpen] = useState(false)
@@ -584,36 +791,40 @@ function SecurityGate({ mode, workspace, onSetup, onUnlock, workspaces, switchin
   const [confirm, setConfirm] = useState('')
   const [name, setName] = useState('')
   const [error, setError] = useState('')
-  const submit = async event => { event.preventDefault(); setError(''); if (mode === 'setup' && !name.trim()) return setError('请填写工作区名称'); if (password.length < 8) return setError('密码至少需要 8 位字符'); if (mode === 'setup' && password !== confirm) return setError('两次输入的密码不一致'); const result = mode === 'setup' ? await onSetup(name, password) : await onUnlock(password); if (typeof result === 'string') return setError(result); if (mode === 'unlock' && !result) setError(switchingWorkspace ? '密码错误，请重试' : '密码不属于任何工作区，请重试') }
-  return <div className="security-screen"><div className="security-panel"><div className="security-mark"><LockKeyhole size={25} /></div><p className="eyebrow">PERSONAL WORKSPACE</p><h1>{mode === 'setup' ? '创建工作区' : `解锁${workspace.name}`}</h1><p className="security-copy">{mode === 'setup' ? '每个工作区都有独立密码和独立数据。' : '输入该工作区密码后继续。'}</p><form onSubmit={submit}>{mode === 'setup' && <label className="security-label">工作区名称<input value={name} onChange={event => setName(event.target.value)} autoFocus placeholder="例如：个人空间" /></label>}<label className="security-label">密码<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoFocus={mode !== 'setup'} placeholder="至少 8 位字符" /></label>{mode === 'setup' && <label className="security-label">确认密码<input type="password" value={confirm} onChange={event => setConfirm(event.target.value)} placeholder="再次输入密码" /></label>}{error && <div className="security-error">{error}</div>}<button className="primary-button security-submit" type="submit">{mode === 'setup' ? <><ShieldCheck size={17} />创建工作区</> : <><UnlockKeyhole size={17} />解锁工作区</>}</button></form>{mode === 'setup' && <label className="security-import-link">导入已有配置<input type="file" accept="application/json,.json" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; onImportConfig(file) }} /></label>}{workspaces.length > 1 && <div className="security-workspaces"><span>切换其他工作区</span>{workspaces.map(item => <button key={item.id} onClick={() => onSelectWorkspace(item.id)}>{item.name}</button>)}</div>}<div className="security-foot"><ShieldCheck size={14} />数据仅存储在当前设备</div></div></div>
+  const submit = async event => { event.preventDefault(); setError(''); if (mode === 'setup' && !name.trim()) return setError(storedLanguage() === 'en' ? 'Enter a workspace name' : storedLanguage() === 'ja' ? 'ワークスペース名を入力してください' : '请填写工作区名称'); if (password.length < 8) return setError(storedLanguage() === 'en' ? 'Password must be at least 8 characters' : storedLanguage() === 'ja' ? 'パスワードは8文字以上必要です' : '密码至少需要 8 位字符'); if (mode === 'setup' && password !== confirm) return setError(storedLanguage() === 'en' ? 'Passwords do not match' : storedLanguage() === 'ja' ? 'パスワードが一致しません' : '两次输入的密码不一致'); const result = mode === 'setup' ? await onSetup(name, password) : await onUnlock(password); if (typeof result === 'string') return setError(result); if (mode === 'unlock' && !result) setError(switchingWorkspace ? (storedLanguage() === 'en' ? 'Incorrect password' : storedLanguage() === 'ja' ? 'パスワードが違います' : '密码错误，请重试') : (storedLanguage() === 'en' ? 'Password does not match any workspace' : storedLanguage() === 'ja' ? 'パスワードが一致するワークスペースがありません' : '密码不属于任何工作区，请重试')) }
+  const language = storedLanguage()
+  const copy = language === 'en' ? { setup: 'Create workspace', unlock: name => `Unlock ${name}`, setupHint: 'Each workspace has its own password and data.', unlockHint: 'Enter the workspace password to continue.', name: 'Workspace name', namePlaceholder: 'e.g. Personal', password: 'Password', passwordPlaceholder: 'At least 8 characters', confirm: 'Confirm password', create: 'Create workspace', submit: 'Unlock workspace', import: 'Import existing config', switch: 'Switch workspace', local: 'Data is stored on this device only' } : language === 'ja' ? { setup: 'ワークスペースを作成', unlock: name => `${name}をロック解除`, setupHint: 'ワークスペースごとにパスワードとデータを管理します。', unlockHint: 'パスワードを入力して続行します。', name: 'ワークスペース名', namePlaceholder: '例：個人用', password: 'パスワード', passwordPlaceholder: '8文字以上', confirm: 'パスワードを確認', create: '作成', submit: 'ロック解除', import: '既存の設定をインポート', switch: 'ワークスペースを切り替え', local: 'データはこのデバイスにのみ保存されます' } : { setup: '创建工作区', unlock: name => `解锁${name}`, setupHint: '每个工作区都有独立密码和独立数据。', unlockHint: '输入该工作区密码后继续。', name: '工作区名称', namePlaceholder: '例如：个人空间', password: '密码', passwordPlaceholder: '至少 8 位字符', confirm: '确认密码', create: '创建工作区', submit: '解锁工作区', import: '导入已有配置', switch: '切换其他工作区', local: '数据仅存储在当前设备' }
+  return <div className="security-screen"><div className="security-panel"><div className="security-mark"><LockKeyhole size={25} /></div><p className="eyebrow">PERSONAL WORKSPACE</p><h1>{mode === 'setup' ? copy.setup : copy.unlock(workspace.name)}</h1><p className="security-copy">{mode === 'setup' ? copy.setupHint : copy.unlockHint}</p><form onSubmit={submit}>{mode === 'setup' && <label className="security-label">{copy.name}<input value={name} onChange={event => setName(event.target.value)} autoFocus placeholder={copy.namePlaceholder} /></label>}<label className="security-label">{copy.password}<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoFocus={mode !== 'setup'} placeholder={copy.passwordPlaceholder} /></label>{mode === 'setup' && <label className="security-label">{copy.confirm}<input type="password" value={confirm} onChange={event => setConfirm(event.target.value)} placeholder={copy.passwordPlaceholder} /></label>}{error && <div className="security-error">{error}</div>}<button className="primary-button security-submit" type="submit">{mode === 'setup' ? <><ShieldCheck size={17} />{copy.create}</> : <><UnlockKeyhole size={17} />{copy.submit}</>}</button></form>{mode === 'setup' && <label className="security-import-link">{copy.import}<input type="file" accept="application/json,.json" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; onImportConfig(file) }} /></label>}{workspaces.length > 1 && <div className="security-workspaces"><span>{copy.switch}</span>{workspaces.map(item => <button key={item.id} onClick={() => onSelectWorkspace(item.id)}>{item.name}</button>)}</div>}<div className="security-foot"><ShieldCheck size={14} />{copy.local}</div></div></div>
 }
 
 const BOOK_TYPES = ['全部', '.pdf', '.epub', '.txt', '.md', '.html']
 const formatFileSize = size => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`
 
-function BookLibrary({ books, allBooks, filteredCount, page, pageCount, setPage, query, setQuery, type, setType, importing, onImport, onEdit, onDelete, onRead }) {
+function BookLibrary({ language = 'zh', books, allBooks, filteredCount, page, pageCount, setPage, query, setQuery, type, setType, importing, onImport, onEdit, onDelete, onRead }) {
+  const copy = language === 'en' ? { title: 'Book Library', desc: 'Import local books and read them inside the workbench.', import: 'Import book', importing: 'Importing...', search: 'Search title, author or filename...', all: 'All', local: 'Local books', sorted: 'Sorted by import time', filtered: count => `${count} books`, empty: 'No books imported yet', emptyHint: 'Click “Import book” to choose a local file' } : language === 'ja' ? { title: '本棚', desc: 'ローカル書籍を取り込み、ワークベンチで読めます。', import: '書籍を追加', importing: '取り込み中...', search: '書名、著者、ファイル名を検索...', all: 'すべて', local: 'ローカル書籍', sorted: '取り込み順', filtered: count => `${count} 冊`, empty: '書籍はまだありません', emptyHint: '「書籍を追加」からファイルを選択してください' } : { title: '个人书库', desc: '导入本地书籍，在工作台里直接阅读。', import: '导入书籍', importing: '正在导入...', search: '搜索书名、作者或文件名...', all: '全部', local: '本地书籍', sorted: '按导入时间排序', filtered: count => `筛选出 ${count} 本`, empty: '还没有导入书籍', emptyHint: '点击右上角“导入书籍”选择本机文件' }
   return <section className="page resource-page book-library-page">
-    <div className="page-heading library-heading"><div><p className="eyebrow">PERSONAL LIBRARY</p><h1>个人书库</h1><p className="subheading">导入本地书籍，在工作台里直接阅读。</p></div><label className={`primary-button book-import-button ${importing ? 'is-loading' : ''}`}><Upload size={17} />{importing ? '正在导入...' : '导入书籍'}<input type="file" accept={BOOK_FILE_TYPES.join(',')} onChange={onImport} disabled={importing} /></label></div>
-    <div className="library-toolbar book-toolbar"><div className="search-box"><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索书名、作者或文件名..." /></div><div className="tag-filter">{BOOK_TYPES.map(option => <button key={option} className={type === option ? 'selected' : ''} onClick={() => setType(option)}>{option === '全部' ? '全部' : option.replace('.', '').toUpperCase()}</button>)}</div></div>
-    <div className="library-meta"><span>本地书籍 <strong>{allBooks.length}</strong></span><span className="meta-divider" /><span>{filteredCount === allBooks.length ? '按导入时间排序' : `筛选出 ${filteredCount} 本`}</span></div>
-    <div className="book-grid">{books.map(book => <BookCard key={book.id} book={book} onEdit={onEdit} onDelete={onDelete} onRead={onRead} />)}{books.length === 0 && <div className="empty-state"><BookOpen size={24} /><strong>{allBooks.length ? '没有找到匹配的书籍' : '还没有导入书籍'}</strong><span>{allBooks.length ? '试试其他关键词或文件类型' : '点击右上角“导入书籍”选择本机文件'}</span></div>}</div>
+    <div className="page-heading library-heading"><div><p className="eyebrow">PERSONAL LIBRARY</p><h1>{copy.title}</h1><p className="subheading">{copy.desc}</p></div><label className={`primary-button book-import-button ${importing ? 'is-loading' : ''}`}><Upload size={17} />{importing ? copy.importing : copy.import}<input type="file" accept={BOOK_FILE_TYPES.join(',')} onChange={onImport} disabled={importing} /></label></div>
+    <div className="library-toolbar book-toolbar"><div className="search-box"><Search size={17} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={copy.search} /></div><div className="tag-filter">{BOOK_TYPES.map(option => <button key={option} className={type === option ? 'selected' : ''} onClick={() => setType(option)}>{option === '全部' ? copy.all : option.replace('.', '').toUpperCase()}</button>)}</div></div>
+    <div className="library-meta"><span>{copy.local} <strong>{allBooks.length}</strong></span><span className="meta-divider" /><span>{filteredCount === allBooks.length ? copy.sorted : copy.filtered(filteredCount)}</span></div>
+    <div className="book-grid">{books.map(book => <BookCard key={book.id} language={language} book={book} onEdit={onEdit} onDelete={onDelete} onRead={onRead} />)}{books.length === 0 && <div className="empty-state"><BookOpen size={24} /><strong>{allBooks.length ? (language === 'en' ? 'No matching books' : language === 'ja' ? '一致する書籍がありません' : '没有找到匹配的书籍') : copy.empty}</strong><span>{allBooks.length ? (language === 'en' ? 'Try another keyword or file type' : language === 'ja' ? '別のキーワードや形式を試してください' : '试试其他关键词或文件类型') : copy.emptyHint}</span></div>}</div>
     {pageCount > 1 && <ResourcePagination page={page} pageCount={pageCount} setPage={setPage} />}
   </section>
 }
 
-function BookCard({ book, onEdit, onDelete, onRead }) {
+function BookCard({ language = 'zh', book, onEdit, onDelete, onRead }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const run = action => { setMenuOpen(false); action() }
-  return <article className="book-card"><div className="book-card-top"><div className="book-cover"><BookOpen size={20} /></div><div className="book-card-top-actions"><span className="book-file-type">{book.fileType.replace('.', '').toUpperCase()}</span><div className="card-menu"><button className="more-button" title="更多操作" aria-label={`打开 ${book.title} 操作菜单`} aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><MoreHorizontal size={18} /></button>{menuOpen && <div className="card-menu-popover" role="menu"><button role="menuitem" onClick={() => run(() => onEdit(book))}><Pencil size={15} />编辑</button><button role="menuitem" className="delete-action" onClick={() => run(() => onDelete(book))}><Trash2 size={15} />删除</button></div>}</div></div></div><h3>{book.title}</h3><p className="book-author">{book.author || '未填写作者'}</p>{book.category && <span className="book-category">{book.category}</span>}<p className="book-file-name">{book.fileName} · {formatFileSize(book.size || 0)}</p><div className="book-card-footer"><span>导入于 {book.updatedAt}</span><div className="book-actions"><button className="book-read-button" onClick={() => onRead(book)} title="阅读"><BookOpen size={15} />阅读</button></div></div></article>
+  const copy = language === 'en' ? { more: 'More actions', edit: 'Edit', remove: 'Delete', author: 'Author not set', imported: 'Imported', read: 'Read' } : language === 'ja' ? { more: 'その他の操作', edit: '編集', remove: '削除', author: '著者未設定', imported: '追加', read: '読む' } : { more: '更多操作', edit: '编辑', remove: '删除', author: '未填写作者', imported: '导入于', read: '阅读' }
+  return <article className="book-card"><div className="book-card-top"><div className="book-cover"><BookOpen size={20} /></div><div className="book-card-top-actions"><span className="book-file-type">{book.fileType.replace('.', '').toUpperCase()}</span><div className="card-menu"><button className="more-button" title={copy.more} aria-label={`${copy.more} ${book.title}`} aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><MoreHorizontal size={18} /></button>{menuOpen && <div className="card-menu-popover" role="menu"><button role="menuitem" onClick={() => run(() => onEdit(book))}><Pencil size={15} />{copy.edit}</button><button role="menuitem" className="delete-action" onClick={() => run(() => onDelete(book))}><Trash2 size={15} />{copy.remove}</button></div>}</div></div></div><h3>{book.title}</h3><p className="book-author">{book.author || copy.author}</p>{book.category && <span className="book-category">{book.category}</span>}<p className="book-file-name">{book.fileName} · {formatFileSize(book.size || 0)}</p><div className="book-card-footer"><span>{copy.imported} {book.updatedAt}</span><div className="book-actions"><button className="book-read-button" onClick={() => onRead(book)} title={copy.read}><BookOpen size={15} />{copy.read}</button></div></div></article>
 }
 
-function LinksLibrary({ links, onCreate, onEdit, onDelete }) { const [page, setPage] = useState(1); const pageSize = useAdaptivePageSize('resource'); const pageCount = Math.max(1, Math.ceil(links.length / pageSize)); useEffect(() => { if (page > pageCount) setPage(pageCount) }, [page, pageCount]); const visibleLinks = links.slice((page - 1) * pageSize, page * pageSize); return <section className="page resource-page"><div className="page-heading library-heading"><div><p className="eyebrow">RESOURCE CENTER</p><h1>网址收藏</h1><p className="subheading">把常用网站整理好，随时打开。</p></div><button className="primary-button" onClick={onCreate}><Plus size={17} />新建网址</button></div><div className="resource-meta">共 {links.length} 个网址</div><div className="resource-list">{visibleLinks.map(link => <article className="resource-row" key={link.id}><div className="resource-favicon"><ExternalLink size={17} /></div><div className="resource-main"><strong>{link.title}</strong><span>{link.content || link.url}</span><small>{link.url}</small></div><div className="row-tags">{link.tags.map(tag => <span key={tag}>{tag}</span>)}</div><div className="resource-actions"><a href={link.url} target="_blank" rel="noreferrer" title="打开网址"><ExternalLink size={16} /></a><button onClick={() => onEdit(link)} title="编辑"><Pencil size={16} /></button><button onClick={() => onDelete(link.id)} title="删除"><Trash2 size={16} /></button></div></article>)}{links.length === 0 && <div className="empty-state"><ExternalLink size={24} /><strong>还没有网址收藏</strong><span>添加你的第一个常用网址</span></div>}</div>{pageCount > 1 && <ResourcePagination page={page} pageCount={pageCount} setPage={setPage} />}</section> }
+function LinksLibrary({ language = 'zh', links, onCreate, onEdit, onDelete }) { const [page, setPage] = useState(1); const pageSize = useAdaptivePageSize('resource'); const pageCount = Math.max(1, Math.ceil(links.length / pageSize)); useEffect(() => { if (page > pageCount) setPage(pageCount) }, [page, pageCount]); const visibleLinks = links.slice((page - 1) * pageSize, page * pageSize); const copy = language === 'en' ? { title: 'Bookmarks', desc: 'Keep useful websites organized and ready to open.', create: 'New bookmark', count: 'bookmarks', open: 'Open bookmark', edit: 'Edit', remove: 'Delete', empty: 'No bookmarks yet', hint: 'Add your first useful website' } : language === 'ja' ? { title: 'ブックマーク', desc: 'よく使うサイトを整理して、いつでも開けます。', create: '新規ブックマーク', count: '件', open: '開く', edit: '編集', remove: '削除', empty: 'ブックマークはありません', hint: '最初のサイトを追加してください' } : { title: '网址收藏', desc: '把常用网站整理好，随时打开。', create: '新建网址', count: '个网址', open: '打开网址', edit: '编辑', remove: '删除', empty: '还没有网址收藏', hint: '添加你的第一个常用网址' }; return <section className="page resource-page"><div className="page-heading library-heading"><div><p className="eyebrow">RESOURCE CENTER</p><h1>{copy.title}</h1><p className="subheading">{copy.desc}</p></div><button className="primary-button" onClick={onCreate}><Plus size={17} />{copy.create}</button></div><div className="resource-meta">{language === 'en' ? `${links.length} ${copy.count}` : `共 ${links.length} ${copy.count}`}</div><div className="resource-list">{visibleLinks.map(link => <article className="resource-row" key={link.id}><div className="resource-favicon"><ExternalLink size={17} /></div><div className="resource-main"><strong>{link.title}</strong><span>{link.content || link.url}</span><small>{link.url}</small></div><div className="row-tags">{link.tags.map(tag => <span key={tag}>{tag}</span>)}</div><div className="resource-actions"><a href={link.url} target="_blank" rel="noreferrer" title={copy.open}><ExternalLink size={16} /></a><button onClick={() => onEdit(link)} title={copy.edit}><Pencil size={16} /></button><button onClick={() => onDelete(link.id)} title={copy.remove}><Trash2 size={16} /></button></div></article>)}{links.length === 0 && <div className="empty-state"><ExternalLink size={24} /><strong>{copy.empty}</strong><span>{copy.hint}</span></div>}</div>{pageCount > 1 && <ResourcePagination page={page} pageCount={pageCount} setPage={setPage} />}</section> }
 
-function ApiKeyLibrary({ apiKeys, encryptionKey, onCreate, onEdit, onDelete }) { const [visible, setVisible] = useState({}); const [values, setValues] = useState({}); const [page, setPage] = useState(1); const pageSize = useAdaptivePageSize('resource'); const pageCount = Math.max(1, Math.ceil(apiKeys.length / pageSize)); useEffect(() => { if (page > pageCount) setPage(pageCount) }, [page, pageCount]); const reveal = async record => { if (values[record.id]) return setVisible(prev => ({ ...prev, [record.id]: !prev[record.id] })); try { const value = await decryptApiValue(encryptionKey, record.encrypted); setValues(prev => ({ ...prev, [record.id]: value })); setVisible(prev => ({ ...prev, [record.id]: true })) } catch { /* corrupted records stay masked */ } }; const visibleKeys = apiKeys.slice((page - 1) * pageSize, page * pageSize); return <section className="page resource-page"><div className="page-heading library-heading"><div><p className="eyebrow">RESOURCE CENTER</p><h1>API Keys</h1><p className="subheading">使用 AES-256-GCM 加密保存在本机。</p></div><button className="primary-button" onClick={onCreate}><Plus size={17} />添加 API Key</button></div><div className="key-notice"><ShieldCheck size={17} /><span>密钥内容不会明文写入浏览器存储，只有解锁后才会在内存中解密。</span></div><div className="resource-meta">共 {apiKeys.length} 个 API Key</div><div className="resource-list">{visibleKeys.map(record => <article className="resource-row key-row" key={record.id}><div className="resource-favicon key-favicon"><KeyRound size={17} /></div><div className="resource-main"><strong>{record.name}</strong><span>{record.provider || '未设置服务商'} · {record.requestUrl || '未设置请求地址'}</span><div className="masked-key">{visible[record.id] ? values[record.id] : '••••••••••••••••••••'}</div></div><div className="resource-actions"><button onClick={() => reveal(record)} title={visible[record.id] ? '隐藏' : '显示'}>{visible[record.id] ? <EyeOff size={16} /> : <Eye size={16} />}</button><button onClick={() => onEdit(record)} title="编辑"><Pencil size={16} /></button><button onClick={() => onDelete(record.id)} title="删除"><Trash2 size={16} /></button></div></article>)}{apiKeys.length === 0 && <div className="empty-state"><KeyRound size={24} /><strong>还没有 API Keys</strong><span>添加后会使用 AES-256-GCM 加密</span></div>}</div>{pageCount > 1 && <ResourcePagination page={page} pageCount={pageCount} setPage={setPage} />}</section> }
+function ApiKeyLibrary({ language = 'zh', apiKeys, encryptionKey, onCreate, onEdit, onDelete }) { const [visible, setVisible] = useState({}); const [values, setValues] = useState({}); const [page, setPage] = useState(1); const pageSize = useAdaptivePageSize('resource'); const pageCount = Math.max(1, Math.ceil(apiKeys.length / pageSize)); useEffect(() => { if (page > pageCount) setPage(pageCount) }, [page, pageCount]); const reveal = async record => { if (values[record.id]) return setVisible(prev => ({ ...prev, [record.id]: !prev[record.id] })); try { const value = await decryptApiValue(encryptionKey, record.encrypted); setValues(prev => ({ ...prev, [record.id]: value })); setVisible(prev => ({ ...prev, [record.id]: true })) } catch { /* corrupted records stay masked */ } }; const visibleKeys = apiKeys.slice((page - 1) * pageSize, page * pageSize); const copy = language === 'en' ? { desc: 'Encrypted locally with AES-256-GCM.', add: 'Add API key', notice: 'Key values are never written to browser storage in plaintext.', count: 'API keys', provider: 'Provider not set', url: 'Request URL not set', hide: 'Hide', show: 'Show', edit: 'Edit', remove: 'Delete', empty: 'No API keys yet', hint: 'Keys are encrypted with AES-256-GCM' } : language === 'ja' ? { desc: 'AES-256-GCMでローカル暗号化して保存します。', add: 'API Keyを追加', notice: 'キーの値は平文でブラウザストレージに保存されません。', count: '個のAPI Key', provider: 'サービス未設定', url: 'リクエストURL未設定', hide: '非表示', show: '表示', edit: '編集', remove: '削除', empty: 'API Keyはありません', hint: 'AES-256-GCMで暗号化して保存します' } : { desc: '使用 AES-256-GCM 加密保存在本机。', add: '添加 API Key', notice: '密钥内容不会明文写入浏览器存储，只有解锁后才会在内存中解密。', count: '个 API Key', provider: '未设置服务商', url: '未设置请求地址', hide: '隐藏', show: '显示', edit: '编辑', remove: '删除', empty: '还没有 API Keys', hint: '添加后会使用 AES-256-GCM 加密' }; return <section className="page resource-page"><div className="page-heading library-heading"><div><p className="eyebrow">RESOURCE CENTER</p><h1>API Keys</h1><p className="subheading">{copy.desc}</p></div><button className="primary-button" onClick={onCreate}><Plus size={17} />{copy.add}</button></div><div className="key-notice"><ShieldCheck size={17} /><span>{copy.notice}</span></div><div className="resource-meta">{language === 'en' ? `${apiKeys.length} ${copy.count}` : `${apiKeys.length} ${copy.count}`}</div><div className="resource-list">{visibleKeys.map(record => <article className="resource-row key-row" key={record.id}><div className="resource-favicon key-favicon"><KeyRound size={17} /></div><div className="resource-main"><strong>{record.name}</strong><span>{record.provider || copy.provider} · {record.requestUrl || copy.url}</span><div className="masked-key">{visible[record.id] ? values[record.id] : '••••••••••••••••••••'}</div></div><div className="resource-actions"><button onClick={() => reveal(record)} title={visible[record.id] ? copy.hide : copy.show}>{visible[record.id] ? <EyeOff size={16} /> : <Eye size={16} />}</button><button onClick={() => onEdit(record)} title={copy.edit}><Pencil size={16} /></button><button onClick={() => onDelete(record.id)} title={copy.remove}><Trash2 size={16} /></button></div></article>)}{apiKeys.length === 0 && <div className="empty-state"><KeyRound size={24} /><strong>{copy.empty}</strong><span>{copy.hint}</span></div>}</div>{pageCount > 1 && <ResourcePagination page={page} pageCount={pageCount} setPage={setPage} />}</section> }
 
 function ResourcePagination({ page, pageCount, setPage }) { const visibleCount = Math.min(5, pageCount); const start = Math.min(Math.max(1, page - Math.floor(visibleCount / 2)), pageCount - visibleCount + 1); const numbers = Array.from({ length: visibleCount }, (_, index) => start + index); return <div className="pagination resource-pagination" aria-label="分页"><button className="page-arrow" disabled={page === 1} onClick={() => setPage(page - 1)}>上一页</button><div className="page-numbers">{numbers.map(number => <button key={number} className={page === number ? 'active' : ''} onClick={() => setPage(number)} aria-label={`第 ${number} 页`}>{number}</button>)}</div><button className="page-arrow" disabled={page === pageCount} onClick={() => setPage(page + 1)}>下一页</button></div> }
 
-function PromptCard({ item, onEdit, onDelete, onCopy }) { const [menuOpen, setMenuOpen] = useState(false); const run = action => { setMenuOpen(false); action() }; return <article className="prompt-card"><div className="prompt-card-top"><div className="prompt-type"><Sparkles size={15} />提示词</div><div className="card-menu"><button className="more-button" title="更多操作" aria-label={`打开 ${item.title} 操作菜单`} aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><MoreHorizontal size={18} /></button>{menuOpen && <div className="card-menu-popover" role="menu"><button role="menuitem" onClick={() => run(() => onCopy(item))}><Copy size={15} />复制</button><button role="menuitem" onClick={() => run(() => onEdit(item))}><Pencil size={15} />编辑</button><button role="menuitem" className="delete-action" onClick={() => run(() => onDelete(item.id))}><Trash2 size={15} />删除</button></div>}</div></div><h3>{item.title}</h3><p>{item.content}</p><div className="prompt-card-footer"><div className="card-tags">{item.tags.map(tag => <span key={tag}>{tag}</span>)}</div><span className="card-date">{item.updatedAt}</span></div></article> }
+function PromptCard({ language = 'zh', item, onEdit, onDelete, onCopy }) { const [menuOpen, setMenuOpen] = useState(false); const run = action => { setMenuOpen(false); action() }; const copy = language === 'en' ? ['Prompt', 'More actions', 'Copy', 'Edit', 'Delete'] : language === 'ja' ? ['プロンプト', 'その他の操作', 'コピー', '編集', '削除'] : ['提示词', '更多操作', '复制', '编辑', '删除']; return <article className="prompt-card"><div className="prompt-card-top"><div className="prompt-type"><Sparkles size={15} />{copy[0]}</div><div className="card-menu"><button className="more-button" title={copy[1]} aria-label={`${copy[1]} ${item.title}`} aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><MoreHorizontal size={18} /></button>{menuOpen && <div className="card-menu-popover" role="menu"><button role="menuitem" onClick={() => run(() => onCopy(item))}><Copy size={15} />{copy[2]}</button><button role="menuitem" onClick={() => run(() => onEdit(item))}><Pencil size={15} />{copy[3]}</button><button role="menuitem" className="delete-action" onClick={() => run(() => onDelete(item.id))}><Trash2 size={15} />{copy[4]}</button></div>}</div></div><h3>{item.title}</h3><p>{item.content}</p><div className="prompt-card-footer"><div className="card-tags">{item.tags.map(tag => <span key={tag}>{tag}</span>)}</div><span className="card-date">{item.updatedAt}</span></div></article> }
 
 function PromptModal({ modal, onClose, onSave }) { const [item, setItem] = useState(modal.item); const [tagInput, setTagInput] = useState(''); const set = (key, value) => setItem(prev => ({ ...prev, [key]: value })); const addTag = e => { if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) { e.preventDefault(); if (!item.tags.includes(tagInput.trim())) set('tags', [...item.tags, tagInput.trim()]); setTagInput('') } }; return <div className="modal-backdrop"><div className="modal"><div className="modal-header"><div><span className="modal-kicker">{modal.mode === 'create' ? 'NEW RESOURCE' : 'EDIT RESOURCE'}</span><h2>{modal.mode === 'create' ? '新建提示词' : '编辑提示词'}</h2></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div><div className="form-field"><label>标题</label><input autoFocus value={item.title} onChange={e => set('title', e.target.value)} placeholder="例如：产品需求拆解" /></div><div className="form-field"><label>内容</label><textarea value={item.content} onChange={e => set('content', e.target.value)} placeholder="输入提示词内容..." rows="6" /></div><div className="form-field"><label>标签 <span>用 Enter 添加</span></label><div className="tag-input">{item.tags.map(tag => <span key={tag}>{tag}<button onClick={() => set('tags', item.tags.filter(t => t !== tag))}><X size={12} /></button></span>)}<input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={addTag} placeholder={item.tags.length ? '' : '添加标签'} /></div></div><div className="modal-footer"><button className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" onClick={() => onSave(item)}><Check size={16} />保存提示词</button></div></div></div> }
 
@@ -717,7 +928,7 @@ const removeShortcutRecord = async (workspaceId, id) => {
   return result
 }
 
-function AppLauncher({ workspaceId = 'personal' }) {
+function AppLauncher({ language = 'zh', workspaceId = 'personal' }) {
   const [shortcuts, setShortcuts] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -800,21 +1011,22 @@ function AppLauncher({ workspaceId = 'personal' }) {
     }
   }
 
+  const copy = language === 'en' ? { title: 'App Launcher', desc: 'Choose a local shortcut and launch your apps with one click.', all: 'Launch all', launching: 'Launching...', choose: 'Choose shortcut', saving: 'Saving...', notice: 'Shortcuts stay in this local workspace; launches are handled by the local service.', refresh: 'Refresh list', empty: 'No app shortcuts yet', emptyHint: 'Choose a .lnk or .url file to get started', first: 'Choose your first shortcut', reading: 'Loading shortcuts...', launch: 'Launch', started: 'Started', remove: 'Delete shortcut' } : language === 'ja' ? { title: 'アプリランチャー', desc: 'ローカルショートカットを選び、ワンクリックで起動します。', all: 'すべて起動', launching: '起動中...', choose: 'ショートカットを選択', saving: '保存中...', notice: 'ショートカットはローカルワークスペースに保存されます。', refresh: '一覧を更新', empty: 'アプリショートカットはありません', emptyHint: '.lnk または .url ファイルを選択してください', first: '最初のショートカットを選択', reading: 'ショートカットを読み込み中...', launch: '起動', started: '起動済み', remove: 'ショートカットを削除' } : { title: '应用启动器', desc: '选择本机快捷方式，点击一次即可启动常用软件。', all: '全部启动', launching: '启动中...', choose: '选择快捷方式', saving: '正在保存...', notice: '快捷方式仅保存在本机工作区，启动操作由本地服务执行。', refresh: '刷新列表', empty: '还没有应用快捷方式', emptyHint: '选择一个 .lnk 或 .url 文件开始使用', first: '选择第一个快捷方式', reading: '正在读取快捷方式...', launch: '启动', started: '启动中', remove: '删除快捷方式' }
   return <section className="page resource-page app-launcher-page">
     <div className="page-heading library-heading">
-      <div><p className="eyebrow">LOCAL TOOLS</p><h1>应用启动器</h1><p className="subheading">选择本机快捷方式，点击一次即可启动常用软件。</p></div>
+      <div><p className="eyebrow">LOCAL TOOLS</p><h1>{copy.title}</h1><p className="subheading">{copy.desc}</p></div>
       <div className="app-launcher-actions">
-        <button className="secondary-button app-launch-all" onClick={launchAll} disabled={!shortcuts.length || loading || Boolean(busyId)}><Play size={16} />{busyId === 'all' ? '启动中...' : '全部启动'}</button>
+        <button className="secondary-button app-launch-all" onClick={launchAll} disabled={!shortcuts.length || loading || Boolean(busyId)}><Play size={16} />{busyId === 'all' ? copy.launching : copy.all}</button>
         <label className={`primary-button shortcut-picker ${saving ? 'is-loading' : ''}`}>
-          <Upload size={17} />{saving ? '正在保存...' : '选择快捷方式'}
+          <Upload size={17} />{saving ? copy.saving : copy.choose}
           <input ref={pickerRef} type="file" accept=".lnk,.url" onChange={addShortcut} disabled={saving} />
         </label>
       </div>
     </div>
-    <div className="app-launcher-notice"><FolderOpen size={17} /><span>快捷方式仅保存在本机工作区，启动操作由本地服务执行。</span><button className="icon-button" title="刷新列表" onClick={loadShortcuts} disabled={loading}><RefreshCw size={16} /></button></div>
+    <div className="app-launcher-notice"><FolderOpen size={17} /><span>{copy.notice}</span><button className="icon-button" title={copy.refresh} onClick={loadShortcuts} disabled={loading}><RefreshCw size={16} /></button></div>
     {error && <div className="app-launcher-error">{error}</div>}
     {message && !error && <div className="app-launcher-message"><Check size={15} />{message}</div>}
-    {loading ? <div className="app-launcher-loading"><RefreshCw size={19} />正在读取快捷方式...</div> : shortcuts.length === 0 ? <div className="empty-state app-empty-state"><AppWindow size={24} /><strong>还没有应用快捷方式</strong><span>选择一个 .lnk 或 .url 文件开始使用</span><button className="text-button" onClick={() => pickerRef.current?.click()}><Upload size={15} />选择第一个快捷方式</button></div> : <><div className="app-grid">{shortcuts.slice((page - 1) * appPageSize, page * appPageSize).map(shortcut => <article className="app-card" key={shortcut.id}><div className="app-card-icon"><AppWindow size={20} /></div><div className="app-card-main"><strong>{shortcut.name}</strong><span>{shortcut.fileName}</span><small>{shortcut.extension.toUpperCase()} · 本机快捷方式</small></div><div className="app-card-actions"><button className="app-launch-button" onClick={() => launchShortcut(shortcut.id)} disabled={Boolean(busyId)}><Play size={15} />{busyId === shortcut.id ? '启动中' : '启动'}</button><button className="resource-delete-button" title="删除快捷方式" onClick={() => removeShortcut(shortcut)} disabled={Boolean(busyId)}><Trash2 size={16} /></button></div></article>)}</div>{pageCount > 1 && <ResourcePagination page={page} pageCount={pageCount} setPage={setPage} />}</>}
+    {loading ? <div className="app-launcher-loading"><RefreshCw size={19} />{copy.reading}</div> : shortcuts.length === 0 ? <div className="empty-state app-empty-state"><AppWindow size={24} /><strong>{copy.empty}</strong><span>{copy.emptyHint}</span><button className="text-button" onClick={() => pickerRef.current?.click()}><Upload size={15} />{copy.first}</button></div> : <><div className="app-grid">{shortcuts.slice((page - 1) * appPageSize, page * appPageSize).map(shortcut => <article className="app-card" key={shortcut.id}><div className="app-card-icon"><AppWindow size={20} /></div><div className="app-card-main"><strong>{shortcut.name}</strong><span>{shortcut.fileName}</span><small>{shortcut.extension.toUpperCase()} · {copy.choose}</small></div><div className="app-card-actions"><button className="app-launch-button" onClick={() => launchShortcut(shortcut.id)} disabled={Boolean(busyId)}><Play size={15} />{busyId === shortcut.id ? copy.started : copy.launch}</button><button className="resource-delete-button" title={copy.remove} onClick={() => removeShortcut(shortcut)} disabled={Boolean(busyId)}><Trash2 size={16} /></button></div></article>)}</div>{pageCount > 1 && <ResourcePagination page={page} pageCount={pageCount} setPage={setPage} />}</>}
   </section>
 }
 
@@ -822,10 +1034,11 @@ const settingsSections = [
   { id: 'workspace', label: '工作区', icon: UserRound },
   { id: 'security', label: '密码与安全', icon: LockKeyhole },
   { id: 'data', label: '数据管理', icon: Database },
-  { id: 'startup', label: '启动设置', icon: Power }
+  { id: 'startup', label: '启动设置', icon: Power },
+  { id: 'language', label: '语言', icon: Globe2 }
 ]
 
-function SettingsPage({ workspace, startupEnabled, serverPort, onToggleStartup, onSaveServerPort, onRenameWorkspace, onChangePassword, onExport, onImport }) {
+function SettingsPage({ language = 'zh', workspace, startupEnabled, serverPort, onToggleStartup, onSaveServerPort, onRenameWorkspace, onChangePassword, onExport, onImport }) {
   const [section, setSection] = useState('workspace')
   const [workspaceName, setWorkspaceName] = useState(workspace.name)
   const [nameError, setNameError] = useState('')
@@ -838,9 +1051,19 @@ function SettingsPage({ workspace, startupEnabled, serverPort, onToggleStartup, 
   const [portMessage, setPortMessage] = useState('')
   const [portError, setPortError] = useState('')
   const [savingPort, setSavingPort] = useState(false)
+  const [languageValue, setLanguageValue] = useState(language)
+  const settingsCopy = language === 'en' ? { title: 'Settings', desc: 'Manage the current workspace, security, data and local service.', nav: 'Settings', workspace: 'Workspace', security: 'Password & security', data: 'Data management', startup: 'Startup', language: 'Language', workspaceDesc: 'Change the display name of this workspace.', name: 'Workspace name', save: 'Save changes', id: 'Workspace ID', idHint: 'Used to isolate local data and cannot be changed.', securityDesc: `Change the password used to enter “${workspace.name}”.`, dataDesc: 'Export this workspace or restore it from an encrypted file.', startupDesc: 'Control the local service after signing in to Windows.', current: 'Current password', newPassword: 'New password', confirmPassword: 'Confirm new password', passwordPlaceholder: 'Enter workspace password', newPasswordPlaceholder: 'At least 8 characters', reencrypt: 'Saved API Keys will be re-encrypted with the new password.', update: 'Update password', exporting: 'Export workspace config', importing: 'Import workspace config', exportHint: 'Prompts, bookmarks, book metadata and encrypted API Keys are included.', importHint: 'Enter the original password; an existing workspace can be overwritten.', auto: 'Start on Windows login', autoHint: 'Start the local workbench service after signing in to Windows.', port: 'Binding port', portHint: 'Listens only on 127.0.0.1; changes restart the service automatically.', on: 'On', off: 'Off', saving: 'Saving...', savePort: 'Save port' } : language === 'ja' ? { title: '設定', desc: 'ワークスペース、セキュリティ、データ、ローカルサービスを管理します。', nav: '設定', workspace: 'ワークスペース', security: 'パスワードとセキュリティ', data: 'データ管理', startup: '起動設定', language: '言語', workspaceDesc: 'ワークスペースの表示名を変更します。', name: 'ワークスペース名', save: '変更を保存', id: 'ワークスペースID', idHint: 'ローカルデータの分離に使用され、変更できません。', securityDesc: `「${workspace.name}」に入るパスワードを変更します。`, dataDesc: '暗号化ファイルからデータをエクスポート・復元します。', startupDesc: 'Windowsログイン後のローカルサービスを制御します。', current: '現在のパスワード', newPassword: '新しいパスワード', confirmPassword: '新しいパスワードを確認', passwordPlaceholder: 'ワークスペースのパスワードを入力', newPasswordPlaceholder: '8文字以上', reencrypt: '保存済みのAPI Keyは新しいパスワードで再暗号化されます。', update: 'パスワードを更新', exporting: 'ワークスペース設定をエクスポート', importing: 'ワークスペース設定をインポート', exportHint: 'プロンプト、ブックマーク、書籍メタデータ、暗号化API Keyを含みます。', importHint: '元のパスワードが必要です。同名ワークスペースは上書きできます。', auto: 'Windowsログイン時に起動', autoHint: 'Windowsログイン後にローカルサービスを起動します。', port: 'バインドポート', portHint: '127.0.0.1のみで待ち受け、変更後は自動再起動します。', on: 'オン', off: 'オフ', saving: '保存中...', savePort: 'ポートを保存' } : { title: '设置', desc: '管理当前工作区、安全、数据与本地服务。', nav: '设置', workspace: '工作区', security: '密码与安全', data: '数据管理', startup: '启动设置', language: '语言', workspaceDesc: '修改当前工作区的显示名称。', name: '工作区名称', save: '保存更改', id: '工作区标识', idHint: '用于隔离本机数据，创建后不可修改。', securityDesc: `修改进入“${workspace.name}”时使用的密码。`, dataDesc: '导出当前工作区，或从加密配置文件恢复数据。', startupDesc: '控制 Windows 登录后的本地服务行为。', current: '当前密码', newPassword: '新密码', confirmPassword: '确认新密码', passwordPlaceholder: '输入当前工作区密码', newPasswordPlaceholder: '至少 8 位字符', reencrypt: '修改后，当前工作区保存的 API Key 会自动使用新密码重新加密。', update: '更新密码', exporting: '导出工作区配置', importing: '导入工作区配置', exportHint: '提示词、网址、书籍元数据和 API Key 密文会被打包并再次加密。', importHint: '需要输入配置原密码；同名工作区可以选择覆盖，密码也会被覆盖。', auto: '开机自启动', autoHint: '登录 Windows 后自动启动本地工作台服务。', port: '绑定端口', portHint: '服务只监听 127.0.0.1；修改后会自动重启并打开新地址。', on: '已开启', off: '已关闭', saving: '保存中...', savePort: '保存端口' }
 
   useEffect(() => setWorkspaceName(workspace.name), [workspace.name])
   useEffect(() => setPortValue(String(serverPort)), [serverPort])
+  useEffect(() => setLanguageValue(language), [language])
+
+  const saveLanguage = event => {
+    const nextLanguage = event.target.value
+    setLanguageValue(nextLanguage)
+    window.localStorage.setItem('workbench-language', nextLanguage)
+    window.dispatchEvent(new CustomEvent('workbench-language-change', { detail: { language: nextLanguage } }))
+  }
 
   const saveWorkspaceName = async event => {
     event.preventDefault()
@@ -870,41 +1093,45 @@ function SettingsPage({ workspace, startupEnabled, serverPort, onToggleStartup, 
   }
 
   return <section className="page settings-page">
-    <div className="page-heading library-heading"><div><h1>设置</h1><p className="subheading">管理当前工作区、安全、数据与本地服务。</p></div></div>
+     <div className="page-heading library-heading"><div><h1>{settingsCopy.title}</h1><p className="subheading">{settingsCopy.desc}</p></div></div>
     <div className="settings-shell">
       <nav className="settings-nav" aria-label="设置分类">
-        <div className="settings-nav-heading">设置</div>
-        {settingsSections.map(item => <button key={item.id} className={section === item.id ? 'active' : ''} onClick={() => setSection(item.id)}><item.icon size={17} /><span>{item.label}</span></button>)}
+        <div className="settings-nav-heading">{settingsCopy.nav}</div>
+        {settingsSections.map(item => <button key={item.id} className={section === item.id ? 'active' : ''} onClick={() => setSection(item.id)}><item.icon size={17} /><span>{settingsCopy[item.id]}</span></button>)}
       </nav>
       <div className="settings-content">
         {section === 'workspace' && <section className="settings-section">
-          <div className="settings-section-heading"><h2>工作区</h2><p>修改当前工作区的显示名称。</p></div>
+          <div className="settings-section-heading"><h2>{settingsCopy.workspace}</h2><p>{settingsCopy.workspaceDesc}</p></div>
           <form className="settings-form" onSubmit={saveWorkspaceName}>
-            <label><span>工作区名称</span><input value={workspaceName} onChange={event => { setWorkspaceName(event.target.value); setNameError(''); setNameSaved(false) }} maxLength={40} /></label>
-            <div className="settings-form-footer"><div className={`settings-feedback ${nameError ? 'error' : ''}`}>{nameError || (nameSaved ? '名称已保存' : '')}</div><button className="primary-button" type="submit" disabled={!workspaceName.trim() || workspaceName.trim() === workspace.name}>保存更改</button></div>
+            <label><span>{settingsCopy.name}</span><input value={workspaceName} onChange={event => { setWorkspaceName(event.target.value); setNameError(''); setNameSaved(false) }} maxLength={40} /></label>
+            <div className="settings-form-footer"><div className={`settings-feedback ${nameError ? 'error' : ''}`}>{nameError || (nameSaved ? (language === 'en' ? 'Name saved' : language === 'ja' ? '名前を保存しました' : '名称已保存') : '')}</div><button className="primary-button" type="submit" disabled={!workspaceName.trim() || workspaceName.trim() === workspace.name}>{settingsCopy.save}</button></div>
           </form>
-          <div className="settings-detail-row"><div><strong>工作区标识</strong><span>用于隔离本机数据，创建后不可修改。</span></div><code>{workspace.id}</code></div>
+           <div className="settings-detail-row"><div><strong>{settingsCopy.id}</strong><span>{settingsCopy.idHint}</span></div><code>{workspace.id}</code></div>
         </section>}
         {section === 'security' && <section className="settings-section">
-          <div className="settings-section-heading"><h2>密码与安全</h2><p>修改进入“{workspace.name}”时使用的密码。</p></div>
+          <div className="settings-section-heading"><h2>{settingsCopy.security}</h2><p>{settingsCopy.securityDesc}</p></div>
           <form className="settings-form settings-password-form" onSubmit={savePassword}>
-            <label><span>当前密码</span><input type="password" autoComplete="current-password" value={passwords.currentPassword} onChange={event => setPasswordField('currentPassword', event.target.value)} placeholder="输入当前工作区密码" /></label>
-            <label><span>新密码</span><input type="password" autoComplete="new-password" value={passwords.newPassword} onChange={event => setPasswordField('newPassword', event.target.value)} placeholder="至少 8 位字符" /></label>
-            <label><span>确认新密码</span><input type="password" autoComplete="new-password" value={passwords.confirmPassword} onChange={event => setPasswordField('confirmPassword', event.target.value)} placeholder="再次输入新密码" /></label>
-            <p className="settings-inline-note">修改后，当前工作区保存的 API Key 会自动使用新密码重新加密。</p>
-            <div className="settings-form-footer"><div className={`settings-feedback ${passwordError ? 'error' : ''}`}>{passwordError || (passwordSaved ? '密码已更新' : '')}</div><button className="primary-button" type="submit" disabled={savingPassword}>{savingPassword ? '正在更新...' : '更新密码'}</button></div>
+            <label><span>{settingsCopy.current}</span><input type="password" autoComplete="current-password" value={passwords.currentPassword} onChange={event => setPasswordField('currentPassword', event.target.value)} placeholder={settingsCopy.passwordPlaceholder} /></label>
+            <label><span>{settingsCopy.newPassword}</span><input type="password" autoComplete="new-password" value={passwords.newPassword} onChange={event => setPasswordField('newPassword', event.target.value)} placeholder={settingsCopy.newPasswordPlaceholder} /></label>
+            <label><span>{settingsCopy.confirmPassword}</span><input type="password" autoComplete="new-password" value={passwords.confirmPassword} onChange={event => setPasswordField('confirmPassword', event.target.value)} placeholder={settingsCopy.newPasswordPlaceholder} /></label>
+            <p className="settings-inline-note">{settingsCopy.reencrypt}</p>
+            <div className="settings-form-footer"><div className={`settings-feedback ${passwordError ? 'error' : ''}`}>{passwordError || (passwordSaved ? (language === 'en' ? 'Password updated' : language === 'ja' ? 'パスワードを更新しました' : '密码已更新') : '')}</div><button className="primary-button" type="submit" disabled={savingPassword}>{savingPassword ? settingsCopy.saving : settingsCopy.update}</button></div>
           </form>
         </section>}
         {section === 'data' && <section className="settings-section">
-          <div className="settings-section-heading"><h2>数据管理</h2><p>导出当前工作区，或从加密配置文件恢复数据。</p></div>
-          <div className="settings-detail-row settings-action-row"><div><strong>导出工作区配置</strong><span>提示词、网址、书籍元数据和 API Key 密文会被打包并再次加密。</span></div><button className="secondary-button" onClick={onExport}><Download size={16} />导出配置</button></div>
-          <div className="settings-detail-row settings-action-row"><div><strong>导入工作区配置</strong><span>需要输入配置原密码；同名工作区可以选择覆盖，密码也会被覆盖。</span></div><label className="secondary-button settings-import-button"><FileUp size={16} />导入配置<input type="file" accept="application/json,.json" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; onImport(file) }} /></label></div>
+          <div className="settings-section-heading"><h2>{settingsCopy.data}</h2><p>{settingsCopy.dataDesc}</p></div>
+          <div className="settings-detail-row settings-action-row"><div><strong>{settingsCopy.exporting}</strong><span>{settingsCopy.exportHint}</span></div><button className="secondary-button" onClick={onExport}><Download size={16} />{language === 'en' ? 'Export' : language === 'ja' ? 'エクスポート' : '导出配置'}</button></div>
+          <div className="settings-detail-row settings-action-row"><div><strong>{settingsCopy.importing}</strong><span>{settingsCopy.importHint}</span></div><label className="secondary-button settings-import-button"><FileUp size={16} />{language === 'en' ? 'Import' : language === 'ja' ? 'インポート' : '导入配置'}<input type="file" accept="application/json,.json" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; onImport(file) }} /></label></div>
         </section>}
-        {section === 'startup' && <section className="settings-section">
-          <div className="settings-section-heading"><h2>启动设置</h2><p>控制 Windows 登录后的本地服务行为。</p></div>
-          <div className="settings-detail-row settings-toggle-row"><div><strong>开机自启动</strong><span>登录 Windows 后自动启动本地工作台服务。</span></div><label className="settings-toggle" title={startupEnabled ? '关闭开机自启动' : '开启开机自启动'}><input type="checkbox" checked={startupEnabled} onChange={onToggleStartup} /><span className="toggle-track" /><span className="settings-toggle-state">{startupEnabled ? '已开启' : '已关闭'}</span></label></div>
-          <form className="settings-detail-row settings-port-row" onSubmit={savePort}><div><strong>绑定端口</strong><span>服务只监听 127.0.0.1；端口范围为 1024 到 65535，修改后会自动重启并打开新地址。</span><span className={`settings-port-feedback ${portError ? 'error' : ''}`}>{portError || portMessage}</span></div><div className="settings-port-control"><input aria-label="绑定端口" type="number" min="1024" max="65535" step="1" value={portValue} onChange={event => { setPortValue(event.target.value); setPortError(''); setPortMessage('') }} /><button className="secondary-button" type="submit" disabled={savingPort || !portValue}>{savingPort ? '保存中...' : '保存端口'}</button></div></form>
-        </section>}
+         {section === 'startup' && <section className="settings-section">
+           <div className="settings-section-heading"><h2>{settingsCopy.startup}</h2><p>{settingsCopy.startupDesc}</p></div>
+          <div className="settings-detail-row settings-toggle-row"><div><strong>{settingsCopy.auto}</strong><span>{settingsCopy.autoHint}</span></div><label className="settings-toggle" title={settingsCopy.auto}><input type="checkbox" checked={startupEnabled} onChange={onToggleStartup} /><span className="toggle-track" /><span className="settings-toggle-state">{startupEnabled ? settingsCopy.on : settingsCopy.off}</span></label></div>
+           <form className="settings-detail-row settings-port-row" onSubmit={savePort}><div><strong>{settingsCopy.port}</strong><span>{settingsCopy.portHint}</span><span className={`settings-port-feedback ${portError ? 'error' : ''}`}>{portError || portMessage}</span></div><div className="settings-port-control"><input aria-label={settingsCopy.port} type="number" min="1024" max="65535" step="1" value={portValue} onChange={event => { setPortValue(event.target.value); setPortError(''); setPortMessage('') }} /><button className="secondary-button" type="submit" disabled={savingPort || !portValue}>{savingPort ? settingsCopy.saving : settingsCopy.savePort}</button></div></form>
+         </section>}
+         {section === 'language' && <section className="settings-section">
+           <div className="settings-section-heading"><h2>{language === 'en' ? 'Language' : language === 'ja' ? '言語' : '语言'}</h2><p>{language === 'en' ? 'Choose the language used by the workbench.' : language === 'ja' ? 'ワークベンチで使用する言語を選択します。' : '选择工作台界面使用的语言。'}</p></div>
+           <div className="settings-detail-row settings-language-row"><div><strong>{language === 'en' ? 'Interface language' : language === 'ja' ? '表示言語' : '界面语言'}</strong><span>{language === 'en' ? 'The main navigation and workbench entry update immediately.' : language === 'ja' ? '主要なナビゲーションと入口にすぐ反映されます。' : '切换后会立即更新主要导航和工作台入口。'}</span></div><select value={languageValue} onChange={saveLanguage} aria-label={language === 'en' ? 'Interface language' : language === 'ja' ? '表示言語' : '界面语言'}>{LANGUAGE_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></div>
+         </section>}
       </div>
     </div>
   </section>
