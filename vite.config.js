@@ -33,7 +33,7 @@ let configuredPort = readConfiguredPort()
 const ALLOWED_EXTENSIONS = new Set(['.lnk', '.url'])
 const MAX_BODY_SIZE = 8 * 1024 * 1024
 const MAX_BOOK_SIZE = 512 * 1024 * 1024
-const STORAGE_KEYS = ['prompts', 'links', 'books', 'api-keys', 'dashboard']
+const STORAGE_KEYS = ['prompts', 'links', 'books', 'api-keys', 'dashboard', 'pomodoro']
 const BOOK_CONTENT_TYPES = {
   '.pdf': 'application/pdf',
   '.epub': 'application/epub+zip',

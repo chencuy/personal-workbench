@@ -5,7 +5,7 @@ import {
   Database, ExternalLink, FolderOpen, Grid2X2, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Menu,
   MoreHorizontal, Pencil, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles,
   Trash2, UnlockKeyhole, Upload, UserRound, X, Zap, PanelLeftClose, PanelLeftOpen, Download, FileUp, Power,
-  Timer, Pause, RotateCcw, ChevronUp, Globe2
+  Timer, Pause, RotateCcw, ChevronUp, Globe2, Bell, BarChart3
 } from 'lucide-react'
 import './styles.css'
 
@@ -106,6 +106,68 @@ const normalizeDashboardConfig = value => Array.isArray(value)
   ? [...new Set(value.filter(id => DASHBOARD_WIDGET_IDS.includes(id)))]
   : [...DASHBOARD_WIDGET_IDS]
 const getInitialDashboard = (workspaceId = 'personal') => normalizeDashboardConfig(portableStorage.data?.[workspaceId]?.dashboard)
+
+const POMODORO_STORAGE_KEY = 'pomodoro'
+const pomodoroDateKey = value => {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
+}
+const pomodoroCutoffKey = (days = 30) => {
+  const date = new Date()
+  date.setHours(0, 0, 0, 0)
+  date.setDate(date.getDate() - (days - 1))
+  return pomodoroDateKey(date)
+}
+const normalizePomodoroStats = value => {
+  const source = Array.isArray(value) ? value[0] : value
+  const dailySource = source?.daily && typeof source.daily === 'object' ? source.daily : {}
+  const cutoff = pomodoroCutoffKey()
+  const today = pomodoroDateKey(new Date())
+  const daily = Object.fromEntries(Object.entries(dailySource)
+    .filter(([date, seconds]) => /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= cutoff && date <= today && Number.isFinite(Number(seconds)) && Number(seconds) > 0)
+    .map(([date, seconds]) => [date, Math.floor(Number(seconds))]))
+  return { totalSeconds: Math.max(0, Math.floor(Number(source?.totalSeconds) || 0)), daily }
+}
+const getInitialPomodoroStats = (workspaceId = 'personal') => normalizePomodoroStats(portableStorage.data?.[workspaceId]?.[POMODORO_STORAGE_KEY])
+const serializePomodoroStats = stats => [{ totalSeconds: Math.max(0, Math.floor(Number(stats?.totalSeconds) || 0)), daily: stats?.daily || {} }]
+const pomodoroSeries = (now = new Date(), days = 30) => Array.from({ length: days }, (_, index) => {
+  const date = new Date(now)
+  date.setHours(0, 0, 0, 0)
+  date.setDate(date.getDate() - (days - index - 1))
+  return { date, key: pomodoroDateKey(date) }
+})
+const formatFocusDuration = (seconds, language = 'zh') => {
+  const totalMinutes = Math.floor(Math.max(0, Number(seconds) || 0) / 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (language === 'en') return hours ? `${hours}h ${minutes}m` : `${minutes}m`
+  if (language === 'ja') return hours ? `${hours}時間${minutes}分` : `${minutes}分`
+  return hours ? `${hours}小时${minutes}分钟` : `${minutes}分钟`
+}
+const playPomodoroCompletionTone = () => {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext
+    if (!AudioContextClass) return
+    const context = new AudioContextClass()
+    const gain = context.createGain()
+    const start = context.currentTime
+    gain.connect(context.destination)
+    gain.gain.setValueAtTime(0.0001, start)
+    ;[0, 0.24, 0.48].forEach((offset, index) => {
+      const oscillator = context.createOscillator()
+      oscillator.type = 'sine'
+      oscillator.frequency.setValueAtTime(index === 2 ? 880 : 660, start + offset)
+      oscillator.connect(gain)
+      oscillator.start(start + offset)
+      oscillator.stop(start + offset + 0.18)
+    })
+    gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.72)
+    context.resume().catch(() => {})
+    window.setTimeout(() => context.close().catch(() => {}), 1000)
+  } catch {}
+}
 
 const BOOK_FILE_TYPES = ['.pdf', '.epub', '.txt', '.md', '.markdown', '.html', '.htm']
 const bookFileType = fileName => `.${String(fileName).split('.').pop().toLowerCase()}`
@@ -317,6 +379,7 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
   const [books, setBooks] = useState(() => getInitialBooks(workspace.id))
   const [apiKeys, setApiKeys] = useState(() => portableStorage.data?.[workspace.id]?.['api-keys'] || [])
   const [dashboardConfig, setDashboardConfig] = useState(() => getInitialDashboard(workspace.id))
+  const [pomodoroStats, setPomodoroStats] = useState(() => getInitialPomodoroStats(workspace.id))
   const [query, setQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState('全部')
   const [bookQuery, setBookQuery] = useState('')
@@ -351,6 +414,7 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
   useEffect(() => { persistWorkspaceData(workspace.id, 'books', books).catch(() => setToast(localize('书库保存失败，请重试', 'Unable to save the book library. Try again.', '本棚を保存できません。もう一度お試しください。'))) }, [workspace.id, books])
   useEffect(() => { persistWorkspaceData(workspace.id, 'api-keys', apiKeys).catch(() => setToast(localize('API Key 保存失败，请重试', 'Unable to save API keys. Try again.', 'API Keyを保存できません。もう一度お試しください。'))) }, [workspace.id, apiKeys])
   useEffect(() => { persistWorkspaceData(workspace.id, 'dashboard', dashboardConfig).catch(() => setToast(localize('仪表盘设置保存失败，请重试', 'Unable to save dashboard settings. Try again.', 'ダッシュボード設定を保存できません。もう一度お試しください。'))) }, [workspace.id, dashboardConfig])
+  useEffect(() => { persistWorkspaceData(workspace.id, POMODORO_STORAGE_KEY, serializePomodoroStats(pomodoroStats)).catch(() => setToast(localize('番茄钟统计保存失败，请重试', 'Unable to save Pomodoro statistics. Try again.', 'ポモドーロ統計を保存できません。もう一度お試しください。'))) }, [workspace.id, pomodoroStats])
   useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(''), 2200); return () => clearTimeout(timer) } }, [toast])
   useEffect(() => {
     const handleShortcut = event => {
@@ -462,7 +526,7 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
       format: 'personal-workbench-config',
       version: 1,
       exportedAt: new Date().toISOString(),
-      data: { prompts, links, books, apiKeys, dashboard: dashboardConfig }
+      data: { prompts, links, books, apiKeys, dashboard: dashboardConfig, [POMODORO_STORAGE_KEY]: serializePomodoroStats(pomodoroStats) }
     }
     try {
       const encrypted = await encryptExportData(encryptionKey, payload)
@@ -572,7 +636,11 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
          const result = await response.json().catch(() => ({}))
          if (!response.ok) throw new Error(result.error || '关闭服务失败')
          return result
-       }} /> : active === 'prompts' ? <PromptLibrary language={language} prompts={pagedPrompts} allPrompts={prompts} filteredCount={filtered.length} page={page} pageCount={pageCount} setPage={setPage} tags={tags} query={query} setQuery={setQuery} selectedTag={selectedTag} setSelectedTag={setSelectedTag} onCreate={openCreate} onEdit={openEdit} onDelete={deletePrompt} onCopy={copyPrompt} /> : active === 'links' ? <LinksLibrary language={language} links={links} onCreate={() => setModal({ mode: 'link-create', item: { title: '', url: '', content: '', tags: [] } })} onEdit={link => setModal({ mode: 'link-edit', item: { ...link, tags: [...link.tags] } })} onDelete={deleteLink} /> : active === 'keys' ? <ApiKeyLibrary language={language} apiKeys={apiKeys} encryptionKey={encryptionKey} onCreate={() => setModal({ mode: 'key-create', item: { name: '', provider: '', value: '', requestUrl: '' } })} onEdit={async record => { try { setModal({ mode: 'key-edit', item: { ...record, requestUrl: record.requestUrl || '', value: await decryptApiValue(encryptionKey, record.encrypted) } }) } catch { setToast(language === 'en' ? 'Unable to decrypt this API key' : language === 'ja' ? 'このAPI Keyを復号できません' : '无法解密该 API Key') } }} onDelete={deleteApiKey} /> : active === 'books' ? <BookLibrary language={language} books={pagedBooks} allBooks={books} filteredCount={filteredBooks.length} page={bookPage} pageCount={bookPageCount} setPage={setBookPage} query={bookQuery} setQuery={setBookQuery} type={bookType} setType={bookType} importing={bookImporting} onImport={importBook} onEdit={openEditBook} onDelete={deleteBook} onRead={setReaderBook} /> : active === 'apps' ? <AppLauncher language={language} workspaceId={workspace.id} /> : active === 'pomodoro' ? <PomodoroTimer language={language} /> : active === 'settings' ? <SettingsPage language={language} workspace={workspace} startupEnabled={startupEnabled} serverPort={serverPort} onToggleStartup={toggleStartup} onSaveServerPort={saveServerPort} onGetServiceStatus={getServiceStatus} onRestartService={restartService} onGetServiceLogs={getServiceLogs} onResetWorkbench={resetWorkbench} onRenameWorkspace={renameWorkspace} onChangePassword={changeWorkspacePassword} onExport={exportWorkspace} onImport={file => importWorkspace(file)} /> : <Placeholder language={language} title={languageLabel(active, language)} icon={navGroups.flatMap(g => g.items).find(i => i.id === active)?.icon} />}
+       }} /> : active === 'prompts' ? <PromptLibrary language={language} prompts={pagedPrompts} allPrompts={prompts} filteredCount={filtered.length} page={page} pageCount={pageCount} setPage={setPage} tags={tags} query={query} setQuery={setQuery} selectedTag={selectedTag} setSelectedTag={setSelectedTag} onCreate={openCreate} onEdit={openEdit} onDelete={deletePrompt} onCopy={copyPrompt} /> : active === 'links' ? <LinksLibrary language={language} links={links} onCreate={() => setModal({ mode: 'link-create', item: { title: '', url: '', content: '', tags: [] } })} onEdit={link => setModal({ mode: 'link-edit', item: { ...link, tags: [...link.tags] } })} onDelete={deleteLink} /> : active === 'keys' ? <ApiKeyLibrary language={language} apiKeys={apiKeys} encryptionKey={encryptionKey} onCreate={() => setModal({ mode: 'key-create', item: { name: '', provider: '', value: '', requestUrl: '' } })} onEdit={async record => { try { setModal({ mode: 'key-edit', item: { ...record, requestUrl: record.requestUrl || '', value: await decryptApiValue(encryptionKey, record.encrypted) } }) } catch { setToast(language === 'en' ? 'Unable to decrypt this API key' : language === 'ja' ? 'このAPI Keyを復号できません' : '无法解密该 API Key') } }} onDelete={deleteApiKey} /> : active === 'books' ? <BookLibrary language={language} books={pagedBooks} allBooks={books} filteredCount={filteredBooks.length} page={bookPage} pageCount={bookPageCount} setPage={setBookPage} query={bookQuery} setQuery={setBookQuery} type={bookType} setType={setBookType} importing={bookImporting} onImport={importBook} onEdit={openEditBook} onDelete={deleteBook} onRead={setReaderBook} /> : active === 'apps' ? <AppLauncher language={language} workspaceId={workspace.id} /> : active === 'pomodoro' ? <PomodoroTimer language={language} stats={pomodoroStats} onSessionComplete={seconds => setPomodoroStats(previous => {
+         const normalized = normalizePomodoroStats(previous)
+         const date = pomodoroDateKey(new Date())
+         return normalizePomodoroStats({ totalSeconds: normalized.totalSeconds + seconds, daily: { ...normalized.daily, [date]: (normalized.daily[date] || 0) + seconds } })
+       })} /> : active === 'settings' ? <SettingsPage language={language} workspace={workspace} startupEnabled={startupEnabled} serverPort={serverPort} onToggleStartup={toggleStartup} onSaveServerPort={saveServerPort} onGetServiceStatus={getServiceStatus} onRestartService={restartService} onGetServiceLogs={getServiceLogs} onResetWorkbench={resetWorkbench} onRenameWorkspace={renameWorkspace} onChangePassword={changeWorkspacePassword} onExport={exportWorkspace} onImport={file => importWorkspace(file)} /> : <Placeholder language={language} title={languageLabel(active, language)} icon={navGroups.flatMap(g => g.items).find(i => i.id === active)?.icon} />}
     </main>
       {modal?.mode === 'create' || modal?.mode === 'edit' ? <PromptModal language={language} modal={modal} onClose={() => setModal(null)} onSave={savePrompt} /> : null}
       {modal?.mode?.startsWith('link-') ? <LinkModal language={language} modal={modal} onClose={() => setModal(null)} onSave={saveLink} /> : null}
@@ -732,16 +800,23 @@ function Overview({ language = 'zh', username, prompts, links, apiKeys, dashboar
 
 const POMODORO_OPTIONS = [15, 25, 45, 60]
 
-function PomodoroTimer({ language = 'zh' }) {
+function PomodoroTimer({ language = 'zh', stats, onSessionComplete }) {
   const [durationMinutes, setDurationMinutes] = useState(25)
   const [remainingSeconds, setRemainingSeconds] = useState(25 * 60)
   const [running, setRunning] = useState(false)
   const [completed, setCompleted] = useState(false)
+  const [completionNotice, setCompletionNotice] = useState(false)
   const [customValue, setCustomValue] = useState('')
   const [customUnit, setCustomUnit] = useState('minutes')
   const [customError, setCustomError] = useState('')
   const endTimeRef = useRef(0)
-  const copy = language === 'en' ? { title: 'Pomodoro', desc: 'Use a focused session to finish the most important task.', ready: 'Ready to start', running: 'Focusing now', done: 'Session complete', good: 'Well done', focus: 'Focus time', start: 'Start focus', pause: 'Pause', again: 'Start again', reset: 'Reset', choose: 'Choose session length', chooseHint: 'Pick a duration that fits the task before starting.', minutes: 'minutes', custom: 'Custom duration', input: 'Enter time', apply: 'Apply', note: 'The timer keeps running while you switch tools.', invalid: 'Enter a whole number of at least 1.', limit: 'A session cannot exceed 24 hours.', increase: 'Increase custom duration', decrease: 'Decrease custom duration', remaining: (minutes, seconds) => `${minutes} minutes ${seconds} seconds remaining` } : language === 'ja' ? { title: 'ポモドーロ', desc: '集中時間を使って、重要なタスクを終わらせます。', ready: '開始準備完了', running: '集中しています', done: 'セッション完了', good: 'お疲れさまでした', focus: '集中時間', start: '集中開始', pause: '一時停止', again: 'もう一度', reset: 'リセット', choose: '時間を選択', chooseHint: '開始前にタスクに合う時間を選びます。', minutes: '分', custom: 'カスタム時間', input: '時間を入力', apply: '適用', note: 'ツールを切り替えてもタイマーは継続します。', invalid: '1以上の整数を入力してください。', limit: '1回の計時は24時間を超えられません。', increase: 'カスタム時間を増やす', decrease: 'カスタム時間を減らす', remaining: (minutes, seconds) => `残り ${minutes} 分 ${seconds} 秒` } : { title: '番茄钟', desc: '用一段专注时间，完成眼前最重要的事。', ready: '准备开始', running: '正在专注', done: '本轮专注完成', good: '做得很好', focus: '专注时间', start: '开始专注', pause: '暂停', again: '再来一轮', reset: '重置', choose: '选择计时时间', chooseHint: '开始前选择一段适合当前任务的专注时长。', minutes: '分钟', custom: '自定义时长', input: '输入时间', apply: '应用', note: '计时器会在当前页面保持运行，切换工具不会丢失本轮状态。', invalid: '请输入大于等于 1 的整数', limit: '单次计时不能超过 24 小时', increase: '增加自定义时长', decrease: '减少自定义时长', remaining: (minutes, seconds) => `剩余 ${minutes} 分 ${seconds} 秒` }
+  const copy = language === 'en' ? { title: 'Pomodoro', desc: 'Use a focused session to finish the most important task.', ready: 'Ready to start', running: 'Focusing now', done: 'Session complete', good: 'Well done', focus: 'Focus time', start: 'Start focus', pause: 'Pause', again: 'Start again', reset: 'Reset', choose: 'Choose session length', chooseHint: 'Pick a duration that fits the task before starting.', minutes: 'minutes', custom: 'Custom duration', input: 'Enter time', apply: 'Apply', note: 'Only a fully completed session is counted. Paused or reset sessions are not recorded.', invalid: 'Enter a whole number of at least 1.', limit: 'A session cannot exceed 24 hours.', increase: 'Increase custom duration', decrease: 'Decrease custom duration', remaining: (minutes, seconds) => `${minutes} minutes ${seconds} seconds remaining`, completedTitle: 'Focus session complete', completedMessage: minutes => `You completed a ${minutes}-minute focus session.`, close: 'Close', totalFocus: 'Total focus time', last30: 'Focus in the last 30 days', noData: 'No completed focus sessions yet', perDay: 'Daily focus time', chartHint: 'Only the most recent 30 calendar days are shown.' } : language === 'ja' ? { title: 'ポモドーロ', desc: '集中時間を使って、重要なタスクを終わらせます。', ready: '開始準備完了', running: '集中しています', done: 'セッション完了', good: 'お疲れさまでした', focus: '集中時間', start: '集中開始', pause: '一時停止', again: 'もう一度', reset: 'リセット', choose: '時間を選択', chooseHint: '開始前にタスクに合う時間を選びます。', minutes: '分', custom: 'カスタム時間', input: '時間を入力', apply: '適用', note: '完了したセッションだけを記録します。一時停止・リセットしたセッションは記録されません。', invalid: '1以上の整数を入力してください。', limit: '1回の計時は24時間を超えられません。', increase: 'カスタム時間を増やす', decrease: 'カスタム時間を減らす', remaining: (minutes, seconds) => `残り ${minutes} 分 ${seconds} 秒`, completedTitle: '集中セッション完了', completedMessage: minutes => `${minutes}分の集中セッションを完了しました。`, close: '閉じる', totalFocus: '累計集中時間', last30: '過去30日の集中時間', noData: '完了した集中セッションはまだありません', perDay: '日別集中時間', chartHint: '直近30日のみ表示します。' } : { title: '番茄钟', desc: '用一段专注时间，完成眼前最重要的事。', ready: '准备开始', running: '正在专注', done: '本轮专注完成', good: '做得很好', focus: '专注时间', start: '开始专注', pause: '暂停', again: '再来一轮', reset: '重置', choose: '选择计时时间', chooseHint: '开始前选择一段适合当前任务的专注时长。', minutes: '分钟', custom: '自定义时长', input: '输入时间', apply: '应用', note: '只有完整结束的专注轮次才会计入统计；暂停、重置或中断不会计入。', invalid: '请输入大于等于 1 的整数', limit: '单次计时不能超过 24 小时', increase: '增加自定义时长', decrease: '减少自定义时长', remaining: (minutes, seconds) => `剩余 ${minutes} 分 ${seconds} 秒`, completedTitle: '本轮专注完成', completedMessage: minutes => `你已完成 ${minutes} 分钟专注。`, close: '知道了', totalFocus: '累计专注时间', last30: '近 30 天专注统计', noData: '还没有完成过专注轮次', perDay: '每日专注时间', chartHint: '图表仅保留最近 30 个自然日。' }
+  const completionHandledRef = useRef(false)
+
+  const series = useMemo(() => pomodoroSeries(), [])
+  const maxDailySeconds = Math.max(1, ...series.map(item => Number(stats?.daily?.[item.key]) || 0))
+  const hasDailyData = series.some(item => Number(stats?.daily?.[item.key]) > 0)
+  const completionDateLabel = new Intl.DateTimeFormat(language === 'en' ? 'en-US' : language === 'ja' ? 'ja-JP' : 'zh-CN', { month: 'short', day: 'numeric' }).format(new Date())
 
   useEffect(() => {
     if (!running) return undefined
@@ -749,8 +824,13 @@ function PomodoroTimer({ language = 'zh' }) {
       const next = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000))
       setRemainingSeconds(next)
       if (next === 0) {
+        if (completionHandledRef.current) return
+        completionHandledRef.current = true
         setRunning(false)
         setCompleted(true)
+        setCompletionNotice(true)
+        onSessionComplete?.(durationMinutes * 60)
+        playPomodoroCompletionTone()
       }
     }
     tick()
@@ -763,6 +843,8 @@ function PomodoroTimer({ language = 'zh' }) {
     setDurationMinutes(minutes)
     setRemainingSeconds(minutes * 60)
     setCompleted(false)
+    setCompletionNotice(false)
+    completionHandledRef.current = false
     setCustomError('')
   }
 
@@ -777,6 +859,8 @@ function PomodoroTimer({ language = 'zh' }) {
     setDurationMinutes(normalizedMinutes)
     setRemainingSeconds(normalizedMinutes * 60)
     setCompleted(false)
+    setCompletionNotice(false)
+    completionHandledRef.current = false
     setCustomError('')
   }
 
@@ -795,6 +879,8 @@ function PomodoroTimer({ language = 'zh' }) {
     if (remainingSeconds <= 0) {
       setRemainingSeconds(durationMinutes * 60)
       setCompleted(false)
+      setCompletionNotice(false)
+      completionHandledRef.current = false
       endTimeRef.current = Date.now() + durationMinutes * 60 * 1000
       setRunning(true)
       return
@@ -806,12 +892,16 @@ function PomodoroTimer({ language = 'zh' }) {
     }
     endTimeRef.current = Date.now() + remainingSeconds * 1000
     setCompleted(false)
+    setCompletionNotice(false)
+    completionHandledRef.current = false
     setRunning(true)
   }
 
   const resetTimer = () => {
     setRunning(false)
     setCompleted(false)
+    setCompletionNotice(false)
+    completionHandledRef.current = false
     setRemainingSeconds(durationMinutes * 60)
     endTimeRef.current = 0
   }
@@ -860,6 +950,12 @@ function PomodoroTimer({ language = 'zh' }) {
         <div className="pomodoro-note"><Timer size={17} /><span>{copy.note}</span></div>
       </div>
     </div>
+    <section className="pomodoro-stats" aria-label={copy.last30}>
+      <div className="pomodoro-stat-summary"><div><span className="pomodoro-kicker">ALL TIME</span><h2>{copy.totalFocus}</h2><strong>{formatFocusDuration(stats?.totalSeconds, language)}</strong></div><div className="pomodoro-stat-summary-meta"><BarChart3 size={19} /><span>{copy.last30}</span><strong>{formatFocusDuration(series.reduce((sum, item) => sum + (Number(stats?.daily?.[item.key]) || 0), 0), language)}</strong></div></div>
+      <div className="pomodoro-chart-heading"><div><h2>{copy.perDay}</h2><p>{copy.chartHint}</p></div><span>{hasDailyData ? formatFocusDuration(series.reduce((sum, item) => sum + (Number(stats?.daily?.[item.key]) || 0), 0), language) : copy.noData}</span></div>
+      {hasDailyData ? <div className="pomodoro-chart" role="img" aria-label={copy.last30}>{series.map(item => { const value = Number(stats?.daily?.[item.key]) || 0; const dateLabel = `${String(item.date.getMonth() + 1).padStart(2, '0')}/${String(item.date.getDate()).padStart(2, '0')}`; return <div className="pomodoro-chart-column" key={item.key} title={`${dateLabel}: ${formatFocusDuration(value, language)}`}><div className="pomodoro-chart-bar-wrap"><div className={`pomodoro-chart-bar ${value ? 'has-value' : ''}`} style={{ height: `${value ? Math.max(7, value / maxDailySeconds * 100) : 3}%` }} /></div><span>{dateLabel}</span></div> })}</div> : <div className="pomodoro-chart-empty"><BarChart3 size={22} /><span>{copy.noData}</span></div>}
+    </section>
+    {completionNotice && <div className="pomodoro-completion-backdrop" role="presentation"><div className="pomodoro-completion-dialog" role="dialog" aria-modal="true" aria-labelledby="pomodoro-completion-title"><div className="pomodoro-completion-icon"><Bell size={22} /></div><p className="eyebrow">{completionDateLabel}</p><h2 id="pomodoro-completion-title">{copy.completedTitle}</h2><p>{copy.completedMessage(durationMinutes)}</p><button className="primary-button" onClick={() => setCompletionNotice(false)}><Check size={16} />{copy.close}</button></div></div>}
   </section>
 }
 
