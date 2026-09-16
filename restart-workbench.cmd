@@ -6,8 +6,10 @@ set "WORKBENCH_PORT=5180"
 set "WORKBENCH_OPEN_BROWSER=1"
 
 for /f "delims=" %%P in ('powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$port = 5180; try { $settings = Get-Content -Raw -LiteralPath (Join-Path $env:WORKBENCH_DIR '.workbench-data\server.json') | ConvertFrom-Json; if ($settings.port) { $port = [int]$settings.port } } catch {}; $port"') do set "WORKBENCH_PORT=%%P"
-if not "%~1"=="" set "WORKBENCH_PORT=%~1"
+if /I "%~1"=="--no-browser" set "WORKBENCH_OPEN_BROWSER=0"
 if /I "%~2"=="--no-browser" set "WORKBENCH_OPEN_BROWSER=0"
+if not "%~1"=="" if /I not "%~1"=="--no-browser" set "WORKBENCH_PORT=%~1"
+if not "%~2"=="" if /I not "%~2"=="--no-browser" set "WORKBENCH_PORT=%~2"
 
 echo Stopping the current Personal Workbench service...
 powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$root = [IO.Path]::GetFullPath($env:WORKBENCH_DIR).TrimEnd('\'); Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like ('*' + $root + '*') -and $_.CommandLine -match '[\\/]vite(\.js)?' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"

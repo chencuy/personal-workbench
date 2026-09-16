@@ -457,8 +457,65 @@ const scheduleWorkbenchRestart = port => {
   child.unref()
 }
 
+const readServiceLog = async fileName => {
+  try {
+    const value = await fs.readFile(path.join(DATA_DIR, fileName), 'utf8')
+    return value.slice(-24000)
+  } catch (error) {
+    if (error?.code === 'ENOENT') return ''
+    throw error
+  }
+}
+
+const resetWorkbenchData = async () => {
+  await fs.unlink(STARTUP_LINK).catch(() => {})
+  await fs.rm(DATA_DIR, { recursive: true, force: true })
+  await fs.mkdir(DATA_DIR, { recursive: true })
+  configuredPort = DEFAULT_PORT
+  const updatedAt = new Date().toISOString()
+  await Promise.all([
+    fs.writeFile(SERVER_STATE, JSON.stringify({ host: '127.0.0.1', port: DEFAULT_PORT, updatedAt }, null, 2), 'utf8'),
+    fs.writeFile(STARTUP_STATE, JSON.stringify({ enabled: false, port: DEFAULT_PORT, updatedAt }, null, 2), 'utf8')
+  ])
+}
+
 const serverSettingsMiddleware = () => async (request, response, next) => {
   const requestUrl = new URL(request.url || '/', 'http://127.0.0.1')
+  const activePort = Number(request.socket.localPort) || configuredPort
+  if (requestUrl.pathname === '/api/server/status') {
+    if (request.method !== 'GET') return sendJson(response, 405, { error: '不支持的请求方法' })
+    return sendJson(response, 200, { running: true, host: '127.0.0.1', port: activePort, configuredPort, pid: process.pid, uptimeSeconds: Math.floor(process.uptime()) })
+  }
+  if (requestUrl.pathname === '/api/server/logs') {
+    if (request.method !== 'GET') return sendJson(response, 405, { error: '不支持的请求方法' })
+    try {
+      const [stdout, stderr] = await Promise.all([readServiceLog('service.stdout.log'), readServiceLog('service.stderr.log')])
+      return sendJson(response, 200, { stdout, stderr })
+    } catch (error) {
+      return sendJson(response, 500, { error: error instanceof Error ? error.message : '无法读取服务日志' })
+    }
+  }
+  if (requestUrl.pathname === '/api/server/restart') {
+    if (request.method !== 'POST') return sendJson(response, 405, { error: '不支持的请求方法' })
+    try {
+      sendJson(response, 202, { restarting: true, port: activePort })
+      setTimeout(() => scheduleWorkbenchRestart(activePort), 350)
+    } catch (error) {
+      return sendJson(response, 500, { error: error instanceof Error ? error.message : '无法启动重启操作' })
+    }
+    return
+  }
+  if (requestUrl.pathname === '/api/server/reset') {
+    if (request.method !== 'POST') return sendJson(response, 405, { error: '不支持的请求方法' })
+    try {
+      await resetWorkbenchData()
+      sendJson(response, 202, { resetting: true, port: DEFAULT_PORT })
+      setTimeout(() => scheduleWorkbenchRestart(DEFAULT_PORT), 350)
+    } catch (error) {
+      return sendJson(response, 500, { error: error instanceof Error ? error.message : '恢复初始状态失败' })
+    }
+    return
+  }
   if (requestUrl.pathname === '/api/server/stop') {
     if (request.method !== 'POST') return sendJson(response, 405, { error: '不支持的请求方法' })
     response.once('finish', () => setTimeout(() => process.exit(0), 150))
@@ -466,7 +523,6 @@ const serverSettingsMiddleware = () => async (request, response, next) => {
     return
   }
   if (requestUrl.pathname !== '/api/server') return next()
-  const activePort = Number(request.socket.localPort) || configuredPort
   try {
     if (request.method === 'GET') return sendJson(response, 200, { host: '127.0.0.1', port: configuredPort, activePort, restartRequired: configuredPort !== activePort })
     if (request.method === 'POST') {
