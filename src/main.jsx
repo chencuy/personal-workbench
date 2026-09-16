@@ -101,6 +101,12 @@ const getInitialBooks = (workspaceId = 'personal') => {
   return Array.isArray(stored) ? stored.filter(book => book.fileId && book.fileName).map(({ progress, progressVersion, ...book }) => book) : []
 }
 
+const DASHBOARD_WIDGET_IDS = ['clock', 'tools', 'recent']
+const normalizeDashboardConfig = value => Array.isArray(value)
+  ? [...new Set(value.filter(id => DASHBOARD_WIDGET_IDS.includes(id)))]
+  : [...DASHBOARD_WIDGET_IDS]
+const getInitialDashboard = (workspaceId = 'personal') => normalizeDashboardConfig(portableStorage.data?.[workspaceId]?.dashboard)
+
 const BOOK_FILE_TYPES = ['.pdf', '.epub', '.txt', '.md', '.markdown', '.html', '.htm']
 const bookFileType = fileName => `.${String(fileName).split('.').pop().toLowerCase()}`
 const legacyBookDbPromises = new Map()
@@ -310,6 +316,7 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
   const [links, setLinks] = useState(() => getInitialLinks(workspace.id))
   const [books, setBooks] = useState(() => getInitialBooks(workspace.id))
   const [apiKeys, setApiKeys] = useState(() => portableStorage.data?.[workspace.id]?.['api-keys'] || [])
+  const [dashboardConfig, setDashboardConfig] = useState(() => getInitialDashboard(workspace.id))
   const [query, setQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState('全部')
   const [bookQuery, setBookQuery] = useState('')
@@ -343,6 +350,7 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
   useEffect(() => { persistWorkspaceData(workspace.id, 'links', links).catch(() => setToast(localize('网址保存失败，请重试', 'Unable to save bookmarks. Try again.', 'ブックマークを保存できません。もう一度お試しください。'))) }, [workspace.id, links])
   useEffect(() => { persistWorkspaceData(workspace.id, 'books', books).catch(() => setToast(localize('书库保存失败，请重试', 'Unable to save the book library. Try again.', '本棚を保存できません。もう一度お試しください。'))) }, [workspace.id, books])
   useEffect(() => { persistWorkspaceData(workspace.id, 'api-keys', apiKeys).catch(() => setToast(localize('API Key 保存失败，请重试', 'Unable to save API keys. Try again.', 'API Keyを保存できません。もう一度お試しください。'))) }, [workspace.id, apiKeys])
+  useEffect(() => { persistWorkspaceData(workspace.id, 'dashboard', dashboardConfig).catch(() => setToast(localize('仪表盘设置保存失败，请重试', 'Unable to save dashboard settings. Try again.', 'ダッシュボード設定を保存できません。もう一度お試しください。'))) }, [workspace.id, dashboardConfig])
   useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(''), 2200); return () => clearTimeout(timer) } }, [toast])
   useEffect(() => {
     const handleShortcut = event => {
@@ -454,7 +462,7 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
       format: 'personal-workbench-config',
       version: 1,
       exportedAt: new Date().toISOString(),
-      data: { prompts, links, books, apiKeys }
+      data: { prompts, links, books, apiKeys, dashboard: dashboardConfig }
     }
     try {
       const encrypted = await encryptExportData(encryptionKey, payload)
@@ -559,7 +567,7 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
     {sidebarOpen && <button className="backdrop" aria-label={language === 'en' ? 'Close menu' : language === 'ja' ? 'メニューを閉じる' : '关闭菜单'} onClick={() => setSidebarOpen(false)} />}
     <main className="main-content">
       <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><div className="breadcrumbs"><span>{language === 'en' ? 'Workspace' : language === 'ja' ? 'ワークスペース' : '工作台'}</span><span className="slash">/</span><strong>{languageLabel(active, language)}</strong></div><div className="topbar-actions"><button className="icon-button global-search-trigger" title={language === 'en' ? 'Global search' : language === 'ja' ? 'グローバル検索' : '全局搜索'} aria-label={language === 'en' ? 'Global search' : language === 'ja' ? 'グローバル検索' : '全局搜索'} onClick={() => setGlobalSearchOpen(true)}><Search size={18} /></button></div></header>
-       {readerBook ? <BookReader language={language} workspaceId={workspace.id} book={readerBook} onClose={() => setReaderBook(null)} onLocation={updateBookLocation} /> : active === 'overview' ? <Overview language={language} username={systemUsername} prompts={prompts} links={links} apiKeys={apiKeys} onNavigate={setActive} onCopy={copyPrompt} onStopService={async () => {
+       {readerBook ? <BookReader language={language} workspaceId={workspace.id} book={readerBook} onClose={() => setReaderBook(null)} onLocation={updateBookLocation} /> : active === 'overview' ? <Overview language={language} username={systemUsername} prompts={prompts} links={links} apiKeys={apiKeys} dashboardConfig={dashboardConfig} onDashboardConfigChange={setDashboardConfig} onNavigate={setActive} onCopy={copyPrompt} onStopService={async () => {
          const response = await fetch('/api/server/stop', { method: 'POST' })
          const result = await response.json().catch(() => ({}))
          if (!response.ok) throw new Error(result.error || '关闭服务失败')
@@ -622,10 +630,47 @@ function GlobalSearch({ language = 'zh', workspaceId, prompts, links, apiKeys, b
   </div>
 }
 
-function Overview({ language = 'zh', username, prompts, links, apiKeys, onNavigate, onCopy, onStopService }) {
+function DashboardConfigPanel({ language, order, onChange, onReset }) {
+  const copy = language === 'en'
+    ? { title: 'Dashboard layout', hint: 'Choose and arrange overview sections.', clock: 'Clock and greeting', tools: 'Quick tools', recent: 'Recent prompts', reset: 'Reset layout', up: 'Move up', down: 'Move down' }
+    : language === 'ja'
+      ? { title: 'ダッシュボードのレイアウト', hint: '概要に表示するセクションを選択・並べ替えます。', clock: '時計と挨拶', tools: 'ツールショートカット', recent: '最近のプロンプト', reset: 'レイアウトをリセット', up: '上へ移動', down: '下へ移動' }
+      : { title: '仪表盘布局', hint: '选择并调整概述页中的模块。', clock: '时间与问候', tools: '工具快捷入口', recent: '最近使用的提示词', reset: '恢复默认布局', up: '上移', down: '下移' }
+  const labels = { clock: copy.clock, tools: copy.tools, recent: copy.recent }
+  const move = (id, direction) => {
+    const index = order.indexOf(id)
+    const target = index + direction
+    if (index < 0 || target < 0 || target >= order.length) return
+    const next = [...order]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    onChange(next)
+  }
+  const toggle = id => onChange(order.includes(id) ? order.filter(item => item !== id) : [...order, id])
+  return <div className="dashboard-config-panel">
+    <div className="dashboard-config-heading"><div><strong>{copy.title}</strong><span>{copy.hint}</span></div></div>
+    <div className="dashboard-config-list">
+      {DASHBOARD_WIDGET_IDS.map(id => {
+        const enabled = order.includes(id)
+        const index = order.indexOf(id)
+        return <div className={`dashboard-config-row ${enabled ? 'is-enabled' : ''}`} key={id}>
+          <label><input type="checkbox" checked={enabled} onChange={() => toggle(id)} /><span className="dashboard-config-check" /><span>{labels[id]}</span></label>
+          <div className="dashboard-config-order">
+            <button type="button" title={copy.up} aria-label={`${copy.up}: ${labels[id]}`} disabled={!enabled || index <= 0} onClick={() => move(id, -1)}><ChevronUp size={15} /></button>
+            <button type="button" title={copy.down} aria-label={`${copy.down}: ${labels[id]}`} disabled={!enabled || index < 0 || index >= order.length - 1} onClick={() => move(id, 1)}><ChevronDown size={15} /></button>
+          </div>
+        </div>
+      })}
+    </div>
+    <button type="button" className="dashboard-config-reset" onClick={onReset}>{copy.reset}</button>
+  </div>
+}
+
+function Overview({ language = 'zh', username, prompts, links, apiKeys, dashboardConfig = DASHBOARD_WIDGET_IDS, onDashboardConfigChange, onNavigate, onCopy, onStopService }) {
   const [now, setNow] = useState(() => new Date())
   const [stoppingService, setStoppingService] = useState(false)
   const [serviceMessage, setServiceMessage] = useState('')
+  const [configOpen, setConfigOpen] = useState(false)
+  const order = normalizeDashboardConfig(dashboardConfig)
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000)
     return () => window.clearInterval(timer)
@@ -640,10 +685,10 @@ function Overview({ language = 'zh', username, prompts, links, apiKeys, onNaviga
       ? (hour >= 5 && hour < 12 ? 'おはようございます' : hour >= 12 && hour < 18 ? 'こんにちは' : 'こんばんは')
       : (hour >= 5 && hour < 12 ? '早上好' : hour >= 12 && hour < 18 ? '下午好' : '晚上好')
   const copy = language === 'en'
-    ? { tools: 'Quick tools', toolsHint: 'Choose a tool to get started', recent: 'Recently used prompts', recentHint: 'Recently edited and used', all: 'View all', prompt: 'Prompt Library', promptDetail: 'Find and reuse prompts', links: 'Bookmarks', linksDetail: 'Open saved websites and resources', keys: 'API Keys', keysDetail: 'Manage encrypted API keys', apps: 'App Launcher', appsDetail: 'Launch apps on this computer', books: 'Book Library', booksDetail: 'Continue reading local books', pomodoro: 'Pomodoro', pomodoroDetail: 'Start a focused session', content: 'items', bookmark: 'bookmarks', keysMeta: 'keys', local: 'Local tools', stop: 'Stop service', stopping: 'Stopping service...', stopped: 'Service is stopping', stopConfirm: 'Stop the local service? The workbench will become unavailable until you start it again.' }
+    ? { dashboard: 'Overview dashboard', dashboardHint: 'Arrange the sections you use most.', configure: 'Configure dashboard', closeConfig: 'Close dashboard settings', tools: 'Quick tools', toolsHint: 'Choose a tool to get started', recent: 'Recently used prompts', recentHint: 'Recently edited and used', all: 'View all', prompt: 'Prompt Library', promptDetail: 'Find and reuse prompts', links: 'Bookmarks', linksDetail: 'Open saved websites and resources', keys: 'API Keys', keysDetail: 'Manage encrypted API keys', apps: 'App Launcher', appsDetail: 'Launch apps on this computer', books: 'Book Library', booksDetail: 'Continue reading local books', pomodoro: 'Pomodoro', pomodoroDetail: 'Start a focused session', content: 'items', bookmark: 'bookmarks', keysMeta: 'keys', local: 'Local tools', stop: 'Stop service', stopping: 'Stopping service...', stopped: 'Service is stopping', stopConfirm: 'Stop the local service? The workbench will become unavailable until you start it again.', copy: 'Copy' }
     : language === 'ja'
-      ? { tools: 'ツールショートカット', toolsHint: 'ツールを選んで開始', recent: '最近使用したプロンプト', recentHint: '最近編集・使用した内容', all: 'すべて表示', prompt: 'プロンプト', promptDetail: 'プロンプトを検索・再利用', links: 'ブックマーク', linksDetail: '保存したサイトと資料を開く', keys: 'API Keys', keysDetail: '暗号化キーを管理', apps: 'アプリランチャー', appsDetail: 'このPCのアプリを起動', books: '本棚', booksDetail: 'ローカル書籍を読む', pomodoro: 'ポモドーロ', pomodoroDetail: '集中セッションを開始', content: '件', bookmark: '件', keysMeta: '個', local: 'ローカルツール', stop: 'サービスを停止', stopping: '停止中...', stopped: 'サービスを停止しました', stopConfirm: 'ローカルサービスを停止しますか？再度起動するまでワークベンチは利用できません。' }
-      : { tools: '工具快捷入口', toolsHint: '选择一个工具，立即开始', recent: '最近使用的提示词', recentHint: '最近编辑和使用的内容', all: '查看全部', prompt: '提示词库', promptDetail: '查找和复用提示词', links: '网址收藏', linksDetail: '打开常用网站和资料', keys: 'API Keys', keysDetail: '管理加密的接口密钥', apps: '应用启动器', appsDetail: '一键打开本机应用', books: '个人书库', booksDetail: '继续阅读本地书籍', pomodoro: '番茄钟', pomodoroDetail: '开始一段专注时间', content: '条内容', bookmark: '个网址', keysMeta: '个密钥', local: '专注计时', stop: '关闭服务', stopping: '正在关闭服务...', stopped: '服务正在关闭', stopConfirm: '确定关闭本地服务吗？关闭后需要重新启动服务才能再次打开工作台。' }
+      ? { dashboard: '概要ダッシュボード', dashboardHint: 'よく使うセクションを並べ替えます。', configure: 'ダッシュボードを設定', closeConfig: 'ダッシュボード設定を閉じる', tools: 'ツールショートカット', toolsHint: 'ツールを選んで開始', recent: '最近使用したプロンプト', recentHint: '最近編集・使用した内容', all: 'すべて表示', prompt: 'プロンプト', promptDetail: 'プロンプトを検索・再利用', links: 'ブックマーク', linksDetail: '保存したサイトと資料を開く', keys: 'API Keys', keysDetail: '暗号化キーを管理', apps: 'アプリランチャー', appsDetail: 'このPCのアプリを起動', books: '本棚', booksDetail: 'ローカル書籍を読む', pomodoro: 'ポモドーロ', pomodoroDetail: '集中セッションを開始', content: '件', bookmark: '件', keysMeta: '個', local: 'ローカルツール', stop: 'サービスを停止', stopping: '停止中...', stopped: 'サービスを停止しました', stopConfirm: 'ローカルサービスを停止しますか？再度起動するまでワークベンチは利用できません。', copy: 'コピー' }
+      : { dashboard: '概述仪表盘', dashboardHint: '调整你最常使用的模块。', configure: '配置仪表盘', closeConfig: '关闭仪表盘设置', tools: '工具快捷入口', toolsHint: '选择一个工具，立即开始', recent: '最近使用的提示词', recentHint: '最近编辑和使用的内容', all: '查看全部', prompt: '提示词库', promptDetail: '查找和复用提示词', links: '网址收藏', linksDetail: '打开常用网站和资料', keys: 'API Keys', keysDetail: '管理加密的接口密钥', apps: '应用启动器', appsDetail: '一键打开本机应用', books: '个人书库', booksDetail: '继续阅读本地书籍', pomodoro: '番茄钟', pomodoroDetail: '开始一段专注时间', content: '条内容', bookmark: '个网址', keysMeta: '个密钥', local: '专注计时', stop: '关闭服务', stopping: '正在关闭服务...', stopped: '服务正在关闭', stopConfirm: '确定关闭本地服务吗？关闭后需要重新启动服务才能再次打开工作台。', copy: '复制' }
   const stopService = async () => {
     if (stoppingService || !window.confirm(copy.stopConfirm)) return
     setStoppingService(true)
@@ -664,14 +709,24 @@ function Overview({ language = 'zh', username, prompts, links, apiKeys, onNaviga
     { id: 'books', title: copy.books, detail: copy.booksDetail, icon: BookOpen, meta: copy.local },
     { id: 'pomodoro', title: copy.pomodoro, detail: copy.pomodoroDetail, icon: Timer, meta: copy.local, tone: 'focus' }
   ]
-  return <section className="page overview-page">
-    <div className="overview-hero">
+  const renderWidget = id => {
+    if (id === 'clock') return <div className="overview-hero dashboard-widget" key={id}>
       <div className="overview-hero-copy"><p className="overview-greeting">{greeting}, {username || (language === 'en' ? 'there' : language === 'ja' ? 'ユーザー' : '朋友')}</p><strong className="overview-time">{time}</strong><span className="overview-date">{date}</span></div>
     </div>
-    <div className="overview-tools-heading"><div><h2>{copy.tools}</h2><span>{serviceMessage || copy.toolsHint}</span></div><button className="overview-stop-service" onClick={stopService} disabled={stoppingService}><Power size={15} />{stoppingService ? copy.stopping : copy.stop}</button></div>
-    <div className="overview-tools-grid">{toolShortcuts.map(tool => <button key={tool.id} className={`overview-tool-card ${tool.tone || ''}`} onClick={() => onNavigate(tool.id)}><span className="overview-tool-icon"><tool.icon size={19} /></span><span className="overview-tool-main"><strong>{tool.title}</strong><span>{tool.detail}</span></span><span className="overview-tool-meta">{tool.meta}</span><ArrowUpRight size={16} /></button>)}</div>
-    <div className="section-head overview-recent-heading"><div><h2>{copy.recent}</h2><span>{copy.recentHint}</span></div><button className="text-button" onClick={() => onNavigate('prompts')}>{copy.all} <ArrowUpRight size={15} /></button></div>
-    <div className="recent-list">{prompts.slice(0, 3).map(item => <div className="recent-row" key={item.id}><div className="recent-symbol"><Clipboard size={16} /></div><div className="recent-info"><strong>{item.title}</strong><span>{item.content}</span></div><div className="row-tags">{item.tags.slice(0, 2).map(tag => <span key={tag}>{tag}</span>)}</div><span className="recent-time">{item.updatedAt}</span><button className="row-copy" title="复制" onClick={() => onCopy(item)}><Copy size={16} /></button></div>)}</div>
+    if (id === 'tools') return <div className="dashboard-widget" key={id}>
+      <div className="overview-tools-heading"><div><h2>{copy.tools}</h2><span>{serviceMessage || copy.toolsHint}</span></div><button className="overview-stop-service" onClick={stopService} disabled={stoppingService}><Power size={15} />{stoppingService ? copy.stopping : copy.stop}</button></div>
+      <div className="overview-tools-grid">{toolShortcuts.map(tool => <button key={tool.id} className={`overview-tool-card ${tool.tone || ''}`} onClick={() => onNavigate(tool.id)}><span className="overview-tool-icon"><tool.icon size={19} /></span><span className="overview-tool-main"><strong>{tool.title}</strong><span>{tool.detail}</span></span><span className="overview-tool-meta">{tool.meta}</span><ArrowUpRight size={16} /></button>)}</div>
+    </div>
+    if (id === 'recent') return <div className="dashboard-widget" key={id}>
+      <div className="section-head overview-recent-heading"><div><h2>{copy.recent}</h2><span>{copy.recentHint}</span></div><button className="text-button" onClick={() => onNavigate('prompts')}>{copy.all} <ArrowUpRight size={15} /></button></div>
+      <div className="recent-list">{prompts.slice(0, 3).map(item => <div className="recent-row" key={item.id}><div className="recent-symbol"><Clipboard size={16} /></div><div className="recent-info"><strong>{item.title}</strong><span>{item.content}</span></div><div className="row-tags">{item.tags.slice(0, 2).map(tag => <span key={tag}>{tag}</span>)}</div><span className="recent-time">{item.updatedAt}</span><button className="row-copy" title={copy.copy} aria-label={copy.copy} onClick={() => onCopy(item)}><Copy size={16} /></button></div>)}</div>
+    </div>
+    return null
+  }
+  return <section className="page overview-page">
+    <div className="overview-dashboard-toolbar"><div><p className="eyebrow">WORKSPACE</p><h1>{copy.dashboard}</h1><span>{copy.dashboardHint}</span></div><button className="overview-dashboard-config-trigger" aria-expanded={configOpen} aria-label={configOpen ? copy.closeConfig : copy.configure} title={configOpen ? copy.closeConfig : copy.configure} onClick={() => setConfigOpen(value => !value)}><Settings2 size={16} /><span>{copy.configure}</span></button></div>
+    {configOpen && <DashboardConfigPanel language={language} order={order} onChange={value => onDashboardConfigChange(normalizeDashboardConfig(value))} onReset={() => onDashboardConfigChange([...DASHBOARD_WIDGET_IDS])} />}
+    {order.length ? order.map(renderWidget) : <div className="dashboard-empty-state"><LayoutDashboard size={20} /><strong>{language === 'en' ? 'Dashboard is empty' : language === 'ja' ? 'ダッシュボードは空です' : '仪表盘暂时为空'}</strong><span>{copy.configure}</span></div>}
   </section>
 }
 
