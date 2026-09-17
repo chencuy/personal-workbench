@@ -631,9 +631,12 @@ body,
 .pomodoro-note svg{flex:none;color:#4778dc;margin-top:1px}
 .pomodoro-heading{align-items:flex-end;gap:24px}
 .pomodoro-heading-summary{display:flex;align-items:stretch;gap:10px;flex:none}
-.pomodoro-heading-summary>div{min-width:132px;padding:11px 14px;border:1px solid #dfe7f3;border-radius:8px;background:#fff}
+.pomodoro-heading-summary>div,.pomodoro-heading-summary>button{min-width:132px;padding:11px 14px;border:1px solid #dfe7f3;border-radius:8px;background:#fff;display:flex;flex-direction:column;gap:4px;text-align:left}
+.pomodoro-heading-summary button.pomodoro-summary-clickable{cursor:pointer;transition:.15s;position:relative}
+.pomodoro-heading-summary button.pomodoro-summary-clickable:hover{border-color:#b9cbef;background:#f8faff}
 .pomodoro-heading-summary span{display:block;color:#8794a8;font-size:10px;line-height:1.4}
 .pomodoro-heading-summary strong{display:block;margin-top:4px;color:#23385e;font-family:'DM Mono',monospace;font-size:16px;font-weight:500;white-space:nowrap}
+.pomodoro-summary-icon{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#a2b3c8;flex:none}
 .pomodoro-stats{margin-top:16px;padding:25px 28px 28px;border:1px solid var(--line);border-radius:10px;background:#fff}
 .pomodoro-stat-summary{display:flex;align-items:stretch;justify-content:space-between;gap:22px;padding-bottom:23px;border-bottom:1px solid var(--line)}
 .pomodoro-stat-summary h2{margin:8px 0 8px;color:#344258;font-size:16px}
@@ -641,6 +644,14 @@ body,
 .pomodoro-stat-summary-meta{min-width:205px;display:grid;grid-template-columns:auto 1fr;align-content:center;column-gap:9px;row-gap:7px;padding:13px 16px;border:1px solid #e1e9f7;border-radius:8px;background:#f8faff;color:#7185aa;font-size:11px}
 .pomodoro-stat-summary-meta svg{grid-row:span 2;color:#4778dc;align-self:center}
 .pomodoro-stat-summary-meta strong{color:#344d7b;font-family:'DM Mono',monospace;font-size:15px;font-weight:500}
+.pomodoro-details-modal{width:min(680px,100%);max-height:min(680px,82vh)}
+.pomodoro-details-modal .modal-header{margin-bottom:20px}
+.pomodoro-details-content{max-height:min(520px,68vh);overflow-y:auto;display:flex;flex-direction:column;gap:8px;scrollbar-width:thin}
+.pomodoro-details-row{display:grid;grid-template-columns:140px 1fr auto;align-items:center;gap:12px;padding:9px 12px;border-radius:7px;background:#fafcfd;border:1px solid #eef2f7}
+.pomodoro-details-date{font-size:11px;color:#5d6d84;white-space:nowrap}
+.pomodoro-details-bar-container{height:18px;background:#eef2f7;border-radius:4px;overflow:hidden;position:relative}
+.pomodoro-details-bar{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#6c9cf1,#3974e8);border-radius:4px;transition:width .3s ease}
+.pomodoro-details-duration{font-family:'DM Mono',monospace;font-size:13px;color:#2d4569;font-weight:500;min-width:70px;text-align:right}
 .pomodoro-chart-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;padding:23px 0 17px}
 .pomodoro-chart-heading h2{margin:0 0 6px;color:#344258;font-size:15px}
 .pomodoro-chart-heading p{margin:0;color:#9aa5b4;font-size:10px}
@@ -661,4 +672,4 @@ body,
 .pomodoro-completion-dialog p:not(.eyebrow){margin:10px 0 22px;color:#7c899b;font-size:12px;line-height:1.6}
 .pomodoro-completion-dialog .primary-button{margin:0 auto;justify-content:center;min-width:110px}
 @media (max-width:760px){.pomodoro-layout{grid-template-columns:1fr}.pomodoro-panel,.pomodoro-settings{min-height:0}.pomodoro-panel{padding:30px 20px}.pomodoro-settings{padding:26px 20px}.pomodoro-dial{width:min(290px,78vw);margin:22px 0 25px}.pomodoro-time strong{font-size:42px}}
-@media (max-width:620px){.pomodoro-heading{align-items:flex-start;flex-direction:column;gap:16px}.pomodoro-heading-summary{width:100%}.pomodoro-heading-summary>div{min-width:0;flex:1}.pomodoro-stats{padding:21px 18px 23px}.pomodoro-stat-summary{flex-direction:column;gap:16px}.pomodoro-stat-summary-meta{min-width:0}.pomodoro-chart{gap:3px}.pomodoro-chart-column{font-size:7px}.pomodoro-chart-column span{transform:none}.pomodoro-chart-heading{align-items:flex-start;flex-direction:column}.pomodoro-chart-heading>span{text-align:left}}
+@media (max-width:620px){.pomodoro-heading{align-items:flex-start;flex-direction:column;gap:16px}.pomodoro-heading-summary{width:100%}.pomodoro-heading-summary>div{min-width:0;flex:1}.pomodoro-stats{padding:21px 18px 23px}.pomodoro-stat-summary{flex-direction:column;gap:16px}.pomodoro-stat-summary-meta{min-width:0}.pomodoro-chart{gap:3px}.pomodoro-chart-column{font-size:7px}.pomodoro-chart-column span{transform:none}.pomodoro-chart-heading{align-items:flex-start;flex-direction:column}.pomodoro-chart-heading>span{text-align:left}.pomodoro-details-modal{width:calc(100% - 20px);max-height:calc(100vh - 40px)}.pomodoro-details-content{max-height:calc(100vh - 180px)}.pomodoro-details-row{grid-template-columns:1fr;gap:8px;padding:10px}.pomodoro-details-date{font-size:10px}.pomodoro-details-bar-container{order:1}.pomodoro-details-duration{order:2;text-align:left;font-size:12px}}

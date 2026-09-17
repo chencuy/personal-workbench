@@ -5,7 +5,7 @@ import {
   Database, ExternalLink, FolderOpen, Grid2X2, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Menu,
   MoreHorizontal, Pencil, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles,
   Trash2, UnlockKeyhole, Upload, UserRound, X, Zap, PanelLeftClose, PanelLeftOpen, Download, FileUp, Power,
-  Timer, Pause, RotateCcw, ChevronUp, Globe2, Bell, BarChart3
+  Timer, Pause, RotateCcw, ChevronUp, Globe2, Bell, BarChart3, ChevronRight
 } from 'lucide-react'
 import './styles.css'
 
@@ -108,6 +108,7 @@ const normalizeDashboardConfig = value => Array.isArray(value)
 const getInitialDashboard = (workspaceId = 'personal') => normalizeDashboardConfig(portableStorage.data?.[workspaceId]?.dashboard)
 
 const POMODORO_STORAGE_KEY = 'pomodoro'
+const POMODORO_SESSION_KEY = 'pomodoro-session'
 const pomodoroDateKey = value => {
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return ''
@@ -131,6 +132,24 @@ const normalizePomodoroStats = value => {
 }
 const getInitialPomodoroStats = (workspaceId = 'personal') => normalizePomodoroStats(portableStorage.data?.[workspaceId]?.[POMODORO_STORAGE_KEY])
 const serializePomodoroStats = stats => [{ totalSeconds: Math.max(0, Math.floor(Number(stats?.totalSeconds) || 0)), daily: stats?.daily || {} }]
+const loadPomodoroSession = () => {
+  try {
+    const stored = window.localStorage.getItem(POMODORO_SESSION_KEY)
+    if (!stored) return null
+    const session = JSON.parse(stored)
+    if (session.endTime && session.endTime > Date.now()) return session
+    window.localStorage.removeItem(POMODORO_SESSION_KEY)
+    return null
+  } catch {
+    return null
+  }
+}
+const savePomodoroSession = session => {
+  try {
+    if (session) window.localStorage.setItem(POMODORO_SESSION_KEY, JSON.stringify(session))
+    else window.localStorage.removeItem(POMODORO_SESSION_KEY)
+  } catch {}
+}
 const pomodoroSeries = (now = new Date(), days = 30) => Array.from({ length: days }, (_, index) => {
   const date = new Date(now)
   date.setHours(0, 0, 0, 0)
@@ -154,16 +173,23 @@ const playPomodoroCompletionTone = (preparedContext = null) => {
     const start = context.currentTime
     gain.connect(context.destination)
     gain.gain.setValueAtTime(0.0001, start)
-    ;[0, 0.24, 0.48].forEach((offset, index) => {
-      const oscillator = context.createOscillator()
-      oscillator.type = 'sine'
-      oscillator.frequency.setValueAtTime(index === 2 ? 880 : 660, start + offset)
-      oscillator.connect(gain)
-      oscillator.start(start + offset)
-      oscillator.stop(start + offset + 0.18)
-    })
-    gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.72)
+
+    // 播放三次完整的提示音，每次包含两个音符
+    const repeatCount = 3
+    for (let repeat = 0; repeat < repeatCount; repeat++) {
+      const baseOffset = repeat * 0.8
+      ;[0, 0.24].forEach((offset, index) => {
+        const oscillator = context.createOscillator()
+        oscillator.type = 'sine'
+        oscillator.frequency.setValueAtTime(index === 0 ? 660 : 880, start + baseOffset + offset)
+        oscillator.connect(gain)
+        oscillator.start(start + baseOffset + offset)
+        oscillator.stop(start + baseOffset + offset + 0.18)
+      })
+    }
+
+    gain.gain.exponentialRampToValueAtTime(0.2, start + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 2.6)
     context.resume().catch(() => {})
   } catch {}
 }
@@ -800,17 +826,19 @@ function Overview({ language = 'zh', username, prompts, links, apiKeys, dashboar
 const POMODORO_OPTIONS = [15, 25, 45, 60]
 
 function PomodoroTimer({ language = 'zh', stats, onSessionComplete }) {
-  const [durationMinutes, setDurationMinutes] = useState(25)
-  const [remainingSeconds, setRemainingSeconds] = useState(25 * 60)
-  const [running, setRunning] = useState(false)
+  const savedSession = loadPomodoroSession()
+  const [durationMinutes, setDurationMinutes] = useState(savedSession?.durationMinutes || 25)
+  const [remainingSeconds, setRemainingSeconds] = useState(savedSession?.remainingSeconds || 25 * 60)
+  const [running, setRunning] = useState(Boolean(savedSession?.running))
   const [completed, setCompleted] = useState(false)
   const [completionNotice, setCompletionNotice] = useState(false)
   const [customValue, setCustomValue] = useState('')
   const [customUnit, setCustomUnit] = useState('minutes')
   const [customError, setCustomError] = useState('')
-  const endTimeRef = useRef(0)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const endTimeRef = useRef(savedSession?.endTime || 0)
   const audioContextRef = useRef(null)
-  const copy = language === 'en' ? { title: 'Pomodoro', desc: 'Use a focused session to finish the most important task.', ready: 'Ready to start', running: 'Focusing now', done: 'Session complete', good: 'Well done', focus: 'Focus time', start: 'Start focus', pause: 'Pause', again: 'Start again', reset: 'Reset', choose: 'Choose session length', chooseHint: 'Pick a duration that fits the task before starting.', minutes: 'minutes', custom: 'Custom duration', input: 'Enter time', apply: 'Apply', note: 'Only a fully completed session is counted. Paused or reset sessions are not recorded.', invalid: 'Enter a whole number of at least 1.', limit: 'A session cannot exceed 24 hours.', increase: 'Increase custom duration', decrease: 'Decrease custom duration', remaining: (minutes, seconds) => `${minutes} minutes ${seconds} seconds remaining`, completedTitle: 'Focus session complete', completedMessage: minutes => `You completed a ${minutes}-minute focus session.`, close: 'Close', totalFocus: 'Total focus time', last30: 'Focus in the last 30 days', noData: 'No completed focus sessions yet', perDay: 'Daily focus time', chartHint: 'Only the most recent 30 calendar days are shown.' } : language === 'ja' ? { title: 'ポモドーロ', desc: '集中時間を使って、重要なタスクを終わらせます。', ready: '開始準備完了', running: '集中しています', done: 'セッション完了', good: 'お疲れさまでした', focus: '集中時間', start: '集中開始', pause: '一時停止', again: 'もう一度', reset: 'リセット', choose: '時間を選択', chooseHint: '開始前にタスクに合う時間を選びます。', minutes: '分', custom: 'カスタム時間', input: '時間を入力', apply: '適用', note: '完了したセッションだけを記録します。一時停止・リセットしたセッションは記録されません。', invalid: '1以上の整数を入力してください。', limit: '1回の計時は24時間を超えられません。', increase: 'カスタム時間を増やす', decrease: 'カスタム時間を減らす', remaining: (minutes, seconds) => `残り ${minutes} 分 ${seconds} 秒`, completedTitle: '集中セッション完了', completedMessage: minutes => `${minutes}分の集中セッションを完了しました。`, close: '閉じる', totalFocus: '累計集中時間', last30: '過去30日の集中時間', noData: '完了した集中セッションはまだありません', perDay: '日別集中時間', chartHint: '直近30日のみ表示します。' } : { title: '番茄钟', desc: '用一段专注时间，完成眼前最重要的事。', ready: '准备开始', running: '正在专注', done: '本轮专注完成', good: '做得很好', focus: '专注时间', start: '开始专注', pause: '暂停', again: '再来一轮', reset: '重置', choose: '选择计时时间', chooseHint: '开始前选择一段适合当前任务的专注时长。', minutes: '分钟', custom: '自定义时长', input: '输入时间', apply: '应用', note: '只有完整结束的专注轮次才会计入统计；暂停、重置或中断不会计入。', invalid: '请输入大于等于 1 的整数', limit: '单次计时不能超过 24 小时', increase: '增加自定义时长', decrease: '减少自定义时长', remaining: (minutes, seconds) => `剩余 ${minutes} 分 ${seconds} 秒`, completedTitle: '本轮专注完成', completedMessage: minutes => `你已完成 ${minutes} 分钟专注。`, close: '知道了', totalFocus: '累计专注时间', last30: '近 30 天专注统计', noData: '还没有完成过专注轮次', perDay: '每日专注时间', chartHint: '图表仅保留最近 30 个自然日。' }
+  const copy = language === 'en' ? { title: 'Pomodoro', desc: 'Use a focused session to finish the most important task.', ready: 'Ready to start', running: 'Focusing now', done: 'Session complete', good: 'Well done', focus: 'Focus time', start: 'Start focus', pause: 'Pause', again: 'Start again', reset: 'Reset', choose: 'Choose session length', chooseHint: 'Pick a duration that fits the task before starting.', minutes: 'minutes', custom: 'Custom duration', input: 'Enter time', apply: 'Apply', note: 'Only a fully completed session is counted. Paused or reset sessions are not recorded.', invalid: 'Enter a whole number of at least 1.', limit: 'A session cannot exceed 24 hours.', increase: 'Increase custom duration', decrease: 'Decrease custom duration', remaining: (minutes, seconds) => `${minutes} minutes ${seconds} seconds remaining`, completedTitle: 'Focus session complete', completedMessage: minutes => `You completed a ${minutes}-minute focus session.`, close: 'Close', totalFocus: 'Total focus time', last30: 'Focus in the last 30 days', noData: 'No completed focus sessions yet', perDay: 'Daily focus time', chartHint: 'Only the most recent 30 calendar days are shown.', viewDetails: 'View details', hideDetails: 'Hide details' } : language === 'ja' ? { title: 'ポモドーロ', desc: '集中時間を使って、重要なタスクを終わらせます。', ready: '開始準備完了', running: '集中しています', done: 'セッション完了', good: 'お疲れさまでした', focus: '集中時間', start: '集中開始', pause: '一時停止', again: 'もう一度', reset: 'リセット', choose: '時間を選択', chooseHint: '開始前にタスクに合う時間を選びます。', minutes: '分', custom: 'カスタム時間', input: '時間を入力', apply: '適用', note: '完了したセッションだけを記録します。一時停止・リセットしたセッションは記録されません。', invalid: '1以上の整数を入力してください。', limit: '1回の計時は24時間を超えられません。', increase: 'カスタム時間を増やす', decrease: 'カスタム時間を減らす', remaining: (minutes, seconds) => `残り ${minutes} 分 ${seconds} 秒`, completedTitle: '集中セッション完了', completedMessage: minutes => `${minutes}分の集中セッションを完了しました。`, close: '閉じる', totalFocus: '累計集中時間', last30: '過去30日の集中時間', noData: '完了した集中セッションはまだありません', perDay: '日別集中時間', chartHint: '直近30日のみ表示します。', viewDetails: '詳細を表示', hideDetails: '詳細を隠す' } : { title: '番茄钟', desc: '用一段专注时间，完成眼前最重要的事。', ready: '准备开始', running: '正在专注', done: '本轮专注完成', good: '做得很好', focus: '专注时间', start: '开始专注', pause: '暂停', again: '再来一轮', reset: '重置', choose: '选择计时时间', chooseHint: '开始前选择一段适合当前任务的专注时长。', minutes: '分钟', custom: '自定义时长', input: '输入时间', apply: '应用', note: '只有完整结束的专注轮次才会计入统计；暂停、重置或中断不会计入。', invalid: '请输入大于等于 1 的整数', limit: '单次计时不能超过 24 小时', increase: '增加自定义时长', decrease: '减少自定义时长', remaining: (minutes, seconds) => `剩余 ${minutes} 分 ${seconds} 秒`, completedTitle: '本轮专注完成', completedMessage: minutes => `你已完成 ${minutes} 分钟专注。`, close: '知道了', totalFocus: '累计专注时间', last30: '近 30 天专注统计', noData: '还没有完成过专注轮次', perDay: '每日专注时间', chartHint: '图表仅保留最近 30 个自然日。', viewDetails: '查看详情', hideDetails: '收起详情' }
   const completionHandledRef = useRef(false)
 
   const series = useMemo(() => pomodoroSeries(), [])
@@ -831,12 +859,26 @@ function PomodoroTimer({ language = 'zh', stats, onSessionComplete }) {
         setCompletionNotice(true)
         onSessionComplete?.(durationMinutes * 60)
         playPomodoroCompletionTone(audioContextRef.current)
+        savePomodoroSession(null)
       }
     }
     tick()
     const interval = window.setInterval(tick, 250)
     return () => window.clearInterval(interval)
-  }, [running])
+  }, [running, durationMinutes, onSessionComplete])
+
+  useEffect(() => {
+    if (running && endTimeRef.current > 0) {
+      savePomodoroSession({
+        durationMinutes,
+        remainingSeconds,
+        running: true,
+        endTime: endTimeRef.current
+      })
+    } else if (!running) {
+      savePomodoroSession(null)
+    }
+  }, [running, durationMinutes, remainingSeconds])
 
   useEffect(() => () => {
     const context = audioContextRef.current
@@ -921,6 +963,7 @@ function PomodoroTimer({ language = 'zh', stats, onSessionComplete }) {
     completionHandledRef.current = false
     setRemainingSeconds(durationMinutes * 60)
     endTimeRef.current = 0
+    savePomodoroSession(null)
   }
 
   const minutes = String(Math.floor(remainingSeconds / 60)).padStart(2, '0')
@@ -933,7 +976,7 @@ function PomodoroTimer({ language = 'zh', stats, onSessionComplete }) {
   return <section className="page pomodoro-page">
     <div className="page-heading library-heading pomodoro-heading">
       <div><p className="eyebrow">FOCUS TOOL</p><h1>{copy.title}</h1><p className="subheading">{copy.desc}</p></div>
-      <div className="pomodoro-heading-summary" aria-label={copy.totalFocus}><div><span>{copy.totalFocus}</span><strong>{formatFocusDuration(stats?.totalSeconds, language)}</strong></div><div><span>{copy.last30}</span><strong>{formatFocusDuration(series.reduce((sum, item) => sum + (Number(stats?.daily?.[item.key]) || 0), 0), language)}</strong></div></div>
+      <div className="pomodoro-heading-summary" aria-label={copy.totalFocus}><div><span>{copy.totalFocus}</span><strong>{formatFocusDuration(stats?.totalSeconds, language)}</strong></div><button className="pomodoro-summary-clickable" onClick={() => setDetailsOpen(true)}><span>{copy.last30}</span><strong>{formatFocusDuration(series.reduce((sum, item) => sum + (Number(stats?.daily?.[item.key]) || 0), 0), language)}</strong><ChevronRight size={16} className="pomodoro-summary-icon" /></button></div>
     </div>
     <div className="pomodoro-layout">
       <div className="pomodoro-panel">
@@ -973,6 +1016,24 @@ function PomodoroTimer({ language = 'zh', stats, onSessionComplete }) {
       <div className="pomodoro-chart-heading"><div><h2>{copy.perDay}</h2><p>{copy.chartHint}</p></div><span>{hasDailyData ? formatFocusDuration(series.reduce((sum, item) => sum + (Number(stats?.daily?.[item.key]) || 0), 0), language) : copy.noData}</span></div>
       {hasDailyData ? <div className="pomodoro-chart" role="img" aria-label={copy.last30}>{series.map(item => { const value = Number(stats?.daily?.[item.key]) || 0; const dateLabel = `${String(item.date.getMonth() + 1).padStart(2, '0')}/${String(item.date.getDate()).padStart(2, '0')}`; return <div className="pomodoro-chart-column" key={item.key} title={`${dateLabel}: ${formatFocusDuration(value, language)}`}><div className="pomodoro-chart-bar-wrap"><div className={`pomodoro-chart-bar ${value ? 'has-value' : ''}`} style={{ height: `${value ? Math.max(7, value / maxDailySeconds * 100) : 3}%` }} /></div><span>{dateLabel}</span></div> })}</div> : <div className="pomodoro-chart-empty"><BarChart3 size={22} /><span>{copy.noData}</span></div>}
     </section>
+    {detailsOpen && hasDailyData && <div className="modal-backdrop" onClick={() => setDetailsOpen(false)}>
+      <div className="modal pomodoro-details-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><div><p className="modal-kicker">FOCUS STATISTICS</p><h2>{language === 'en' ? 'Last 30 days breakdown' : language === 'ja' ? '過去30日間の詳細' : '近30天详情'}</h2></div><button className="icon-button" onClick={() => setDetailsOpen(false)} aria-label={language === 'en' ? 'Close' : language === 'ja' ? '閉じる' : '关闭'}><X size={18} /></button></div>
+        <div className="pomodoro-details-content">
+          {series.filter(item => Number(stats?.daily?.[item.key]) > 0).reverse().map(item => {
+            const value = Number(stats?.daily?.[item.key]) || 0
+            const dateLabel = new Intl.DateTimeFormat(language === 'en' ? 'en-US' : language === 'ja' ? 'ja-JP' : 'zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(item.date)
+            return <div className="pomodoro-details-row" key={item.key}>
+              <span className="pomodoro-details-date">{dateLabel}</span>
+              <span className="pomodoro-details-bar-container">
+                <span className="pomodoro-details-bar" style={{ width: `${Math.max(5, value / maxDailySeconds * 100)}%` }} />
+              </span>
+              <strong className="pomodoro-details-duration">{formatFocusDuration(value, language)}</strong>
+            </div>
+          })}
+        </div>
+      </div>
+    </div>}
     {completionNotice && <div className="pomodoro-completion-backdrop" role="presentation"><div className="pomodoro-completion-dialog" role="dialog" aria-modal="true" aria-labelledby="pomodoro-completion-title"><div className="pomodoro-completion-icon"><Bell size={22} /></div><p className="eyebrow">{completionDateLabel}</p><h2 id="pomodoro-completion-title">{copy.completedTitle}</h2><p>{copy.completedMessage(durationMinutes)}</p><button className="primary-button" onClick={() => setCompletionNotice(false)}><Check size={16} />{copy.close}</button></div></div>}
   </section>
 }
