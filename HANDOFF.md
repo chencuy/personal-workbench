@@ -91,7 +91,7 @@
 
 没有代码层面的硬阻塞，当前停在用户手动验收阶段。
 
-本会话在用户提出“以后不要自行验证”之前完成过以下检查，仅作为历史记录：
+本会话在用户提出”以后不要自行验证”之前完成过以下检查，仅作为历史记录：
 
 - 设置页改造和端口功能加入后，`npm run build` 曾通过。
 - `/api/server` 曾确认：保存 `5180` 成功，端口 `80` 返回 400，已占用的 `5181` 返回 409。
@@ -107,7 +107,71 @@
 - 换端口后工作区、配置和书籍能否完整打开。
 - 开机自启动已开启时，修改端口后重新登录 Windows 是否使用新端口。
 
-已发现但本次没有处理的旧问题：概述页底部“去设置”按钮没有绑定点击事件。进入设置页应使用侧边栏设置按钮。
+已发现但本次没有处理的旧问题：概述页底部”去设置”按钮没有绑定点击事件。进入设置页应使用侧边栏设置按钮。
+
+## 最近完成的工作（2026-09-21）
+
+### 工具箱整合
+
+用户要求将侧边栏中过多的独立工具项整合到统一的”工具箱”页面，并在该页面实现分页展示。
+
+**完成内容：**
+
+1. **侧边栏精简**：将原本分散的 8 个工具项（应用启动器、番茄钟、HTTP测试、开发工具、文件对比、网络诊断、二维码生成、系统监控）合并为 1 个”工具箱”入口
+2. **工具箱页面**：创建 `ToolsHub` 组件，使用网格布局展示所有工具卡片
+3. **分页功能**：每页显示 6 个工具，使用现有的分页组件样式
+4. **多语言支持**：工具箱标题和工具描述支持中文、英文、日文三种语言
+5. **导航功能**：点击工具卡片可跳转到对应的工具页面
+
+**涉及文件：**
+
+- `src/main.jsx` (line 273-283)：修改 `navGroups` 导航结构，移除独立工具项，保留单一”工具箱”入口
+- `src/main.jsx` (line 292-294)：在 `LANGUAGE_LABELS` 添加 `tools` 翻译
+- `src/main.jsx` (line 616)：添加 `ToolsHub` 组件路由逻辑
+- `src/main.jsx` (line 1963-2047)：新增 `ToolsHub` 组件实现
+
+**遇到的问题及解决：**
+
+在实现过程中遇到 Vite 解析错误：`[PARSE_ERROR] Expected ',' or ')' but found '/'`
+
+**问题原因：** 在 line 616 的条件渲染中，`<Pomodoro>` 组件的 `onComplete` 属性包含嵌套箭头函数，其中一个箭头函数缺少闭合的花括号 `}`，导致解析器将后续的 JSX 关闭标签 `/>` 中的 `/` 误认为除法运算符。
+
+**具体位置：**
+```javascript
+onComplete={seconds => { 
+  const date = pomodoroDateKey(new Date()); 
+  setPomodoroStats(prev => { 
+    const normalized = typeof prev === 'object' && prev !== null ? prev : { totalSeconds: 0, daily: {} }; 
+    return normalizePomodoroStats({ 
+      totalSeconds: normalized.totalSeconds + seconds, 
+      daily: { ...normalized.daily, [date]: (normalized.daily[date] || 0) + seconds } 
+    })
+  // ❌ 此处缺少闭合的 }
+})} />
+```
+
+**解决方案：** 在 `setPomodoroStats` 回调函数的 `return` 语句后添加缺失的闭合花括号：
+```javascript
+onComplete={seconds => { 
+  const date = pomodoroDateKey(new Date()); 
+  setPomodoroStats(prev => { 
+    const normalized = typeof prev === 'object' && prev !== null ? prev : { totalSeconds: 0, daily: {} }; 
+    return normalizePomodoroStats({ 
+      totalSeconds: normalized.totalSeconds + seconds, 
+      daily: { ...normalized.daily, [date]: (normalized.daily[date] || 0) + seconds } 
+    }) // ✅ 添加闭合的 }
+  }) 
+}} />
+```
+
+**关键经验：**
+
+1. Vite/oxc 解析器报告的错误位置（position 49127）是转换后代码的位置，不是源文件的实际行号
+2. 当看到 “Expected ',' or ')' but found '/'” 且涉及 JSX 时，优先检查：
+   - 内联箭头函数的花括号是否完整配对
+   - JSX 属性中的嵌套函数是否正确闭合
+   - 正则表达式字面量是否被误判为除法运算符
+3. 长链条件渲染（多个三元运算符串联）容易隐藏此类错误，建议分段检查或拆分成多个独立条件块
 
 ## 下一步计划
 
@@ -154,3 +218,4 @@
 - 不要自动启动用户真实软件做测试。
 - 不要恢复或重新引入已删除的 Electron 相关内容。
 - 不要使用破坏性 Git 命令，也不要在用户未要求时提交或推送。
+- **JSX 嵌套箭头函数必须完整闭合**：在 JSX 属性中使用嵌套箭头函数时，必须确保每层函数都有对应的闭合花括号。Vite/oxc 解析器遇到缺失的 `}` 时会将后续 JSX 的 `/>` 中的 `/` 误判为除法运算符，报错 `Expected ',' or ')' but found '/'`。错误位置指向转换后代码，不是源文件实际行号。长链条件渲染（多个三元运算符）容易隐藏此类错误。

@@ -33,7 +33,7 @@ let configuredPort = readConfiguredPort()
 const ALLOWED_EXTENSIONS = new Set(['.lnk', '.url'])
 const MAX_BODY_SIZE = 8 * 1024 * 1024
 const MAX_BOOK_SIZE = 512 * 1024 * 1024
-const STORAGE_KEYS = ['prompts', 'links', 'books', 'api-keys', 'dashboard', 'pomodoro']
+const STORAGE_KEYS = ['prompts', 'links', 'books', 'api-keys', 'dashboard', 'pomodoro', 'notes']
 const BOOK_CONTENT_TYPES = {
   '.pdf': 'application/pdf',
   '.epub': 'application/epub+zip',
@@ -438,6 +438,167 @@ const systemMiddleware = () => (request, response, next) => {
   return sendJson(response, 200, { username })
 }
 
+let lastNetworkStats = { timestamp: 0, bytesReceived: 0, bytesSent: 0 }
+
+const systemMonitorMiddleware = () => (request, response, next) => {
+  const requestUrl = new URL(request.url || '/', 'http://127.0.0.1')
+  if (requestUrl.pathname !== '/api/system/monitor') return next()
+  if (request.method !== 'GET') return sendJson(response, 405, { error: '不支持的请求方法' })
+
+  try {
+    const cpus = os.cpus()
+    const totalMemory = os.totalmem()
+    const freeMemory = os.freemem()
+    const usedMemory = totalMemory - freeMemory
+
+    // 计算 CPU 使用率（基于当前时刻的平均值）
+    let totalIdle = 0
+    let totalTick = 0
+    cpus.forEach(cpu => {
+      for (const type in cpu.times) {
+        totalTick += cpu.times[type]
+      }
+      totalIdle += cpu.times.idle
+    })
+    const cpuUsage = totalTick > 0 ? Math.round((1 - totalIdle / totalTick) * 100) : 0
+
+    // 获取主磁盘信息（Windows 为 C:，Unix 为根目录）
+    let diskTotal = 0
+    let diskFree = 0
+    let diskUsed = 0
+    let diskUsagePercent = 0
+    try {
+      const diskPath = process.platform === 'win32' ? 'C:' : '/'
+      const { execSync } = require('child_process')
+      if (process.platform === 'win32') {
+        const output = execSync(`wmic logicaldisk where "DeviceID='C:'" get Size,FreeSpace /format:list`, { encoding: 'utf8' })
+        const freeMatch = output.match(/FreeSpace=(\d+)/)
+        const sizeMatch = output.match(/Size=(\d+)/)
+        if (freeMatch && sizeMatch) {
+          diskFree = parseInt(freeMatch[1])
+          diskTotal = parseInt(sizeMatch[1])
+          diskUsed = diskTotal - diskFree
+          diskUsagePercent = diskTotal > 0 ? Math.round((diskUsed / diskTotal) * 100) : 0
+        }
+      } else {
+        const output = execSync(`df -k ${diskPath} | tail -1`, { encoding: 'utf8' })
+        const parts = output.trim().split(/\s+/)
+        if (parts.length >= 4) {
+          diskTotal = parseInt(parts[1]) * 1024
+          diskUsed = parseInt(parts[2]) * 1024
+          diskFree = parseInt(parts[3]) * 1024
+          diskUsagePercent = parseInt(parts[4])
+        }
+      }
+    } catch { /* 磁盘信息获取失败时返回 0 */ }
+
+    // 获取网络统计信息
+    let downloadSpeed = 0
+    let uploadSpeed = 0
+    let totalReceived = 0
+    let totalSent = 0
+    try {
+      const networkInterfaces = os.networkInterfaces()
+      let bytesReceived = 0
+      let bytesSent = 0
+
+      if (process.platform === 'win32') {
+        const { execSync } = require('child_process')
+        const output = execSync('netstat -e', { encoding: 'utf8' })
+        const lines = output.split('\n')
+        for (const line of lines) {
+          if (line.includes('Bytes')) {
+            const parts = line.trim().split(/\s+/)
+            if (parts.length >= 3) {
+              bytesReceived = parseInt(parts[1]) || 0
+              bytesSent = parseInt(parts[2]) || 0
+              break
+            }
+          }
+        }
+      } else {
+        const { execSync } = require('child_process')
+        try {
+          const output = execSync('cat /proc/net/dev', { encoding: 'utf8' })
+          const lines = output.split('\n')
+          for (const line of lines) {
+            if (line.includes(':') && !line.includes('lo:')) {
+              const parts = line.split(':')[1].trim().split(/\s+/)
+              bytesReceived += parseInt(parts[0]) || 0
+              bytesSent += parseInt(parts[8]) || 0
+            }
+          }
+        } catch {}
+      }
+
+      totalReceived = bytesReceived
+      totalSent = bytesSent
+
+      const now = Date.now()
+      if (lastNetworkStats.timestamp > 0 && bytesReceived > 0 && bytesSent > 0) {
+        const timeDiff = (now - lastNetworkStats.timestamp) / 1000
+        if (timeDiff > 0) {
+          downloadSpeed = Math.max(0, (bytesReceived - lastNetworkStats.bytesReceived) / timeDiff)
+          uploadSpeed = Math.max(0, (bytesSent - lastNetworkStats.bytesSent) / timeDiff)
+        }
+      }
+
+      lastNetworkStats = { timestamp: now, bytesReceived, bytesSent }
+    } catch { /* 网络信息获取失败时返回 0 */ }
+
+    // Node.js 进程信息
+    const processMemory = process.memoryUsage()
+
+    return sendJson(response, 200, {
+      cpu: {
+        usage: cpuUsage,
+        cores: cpus.length,
+        model: cpus[0]?.model || 'Unknown'
+      },
+      memory: {
+        total: totalMemory,
+        used: usedMemory,
+        free: freeMemory,
+        usagePercent: Math.round((usedMemory / totalMemory) * 100)
+      },
+      disk: {
+        total: diskTotal,
+        used: diskUsed,
+        free: diskFree,
+        usagePercent: diskUsagePercent
+      },
+      network: {
+        downloadSpeed,
+        uploadSpeed,
+        totalReceived,
+        totalSent
+      },
+      process: {
+        memory: {
+          heapUsed: processMemory.heapUsed,
+          heapTotal: processMemory.heapTotal,
+          rss: processMemory.rss,
+          external: processMemory.external
+        },
+        uptime: process.uptime(),
+        version: process.version,
+        pid: process.pid
+      },
+      system: {
+        uptime: os.uptime(),
+        platform: os.platform(),
+        arch: os.arch(),
+        hostname: os.hostname(),
+        type: os.type(),
+        release: os.release()
+      },
+      timestamp: Date.now()
+    })
+  } catch (error) {
+    return sendJson(response, 500, { error: error instanceof Error ? error.message : '获取系统信息失败' })
+  }
+}
+
 const portAvailable = port => new Promise(resolve => {
   const probe = net.createServer()
   probe.unref()
@@ -565,6 +726,7 @@ export default defineConfig({
         server.middlewares.use(serverSettingsMiddleware())
         server.middlewares.use(startupMiddleware())
         server.middlewares.use(systemMiddleware())
+        server.middlewares.use(systemMonitorMiddleware())
         server.middlewares.use(shortcutMiddleware())
       },
       configurePreviewServer(server) {
@@ -573,6 +735,7 @@ export default defineConfig({
         server.middlewares.use(serverSettingsMiddleware())
         server.middlewares.use(startupMiddleware())
         server.middlewares.use(systemMiddleware())
+        server.middlewares.use(systemMonitorMiddleware())
         server.middlewares.use(shortcutMiddleware())
       }
     }
