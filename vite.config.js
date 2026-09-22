@@ -18,6 +18,7 @@ const SERVER_STATE = path.join(DATA_DIR, 'server.json')
 const RESTART_LAUNCHER = path.join(process.cwd(), 'restart-workbench.vbs')
 const WORKBENCH_STATE = path.join(DATA_DIR, 'workbench.json')
 const WORKSPACE_DIR = path.join(DATA_DIR, 'workspaces')
+const AVATAR_DIR = path.join(DATA_DIR, 'avatars')
 const STARTUP_LINK = process.env.APPDATA
   ? path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'PersonalWorkbench.lnk')
   : ''
@@ -33,6 +34,8 @@ let configuredPort = readConfiguredPort()
 const ALLOWED_EXTENSIONS = new Set(['.lnk', '.url'])
 const MAX_BODY_SIZE = 8 * 1024 * 1024
 const MAX_BOOK_SIZE = 512 * 1024 * 1024
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024
+const ALLOWED_AVATAR_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
 const STORAGE_KEYS = ['prompts', 'links', 'books', 'api-keys', 'dashboard', 'pomodoro', 'notes']
 const BOOK_CONTENT_TYPES = {
   '.pdf': 'application/pdf',
@@ -713,6 +716,80 @@ const serverSettingsMiddleware = () => async (request, response, next) => {
   }
 }
 
+const avatarMiddleware = () => async (request, response, next) => {
+  const requestUrl = new URL(request.url, `http://${request.headers.host}`)
+  if (!requestUrl.pathname.startsWith('/api/avatar/')) return next()
+
+  try {
+    const parts = requestUrl.pathname.split('/')
+    if (parts.length !== 4 || parts[1] !== 'api' || parts[2] !== 'avatar') return next()
+
+    const workspaceId = parts[3]
+    if (!workspaceId || !/^[a-zA-Z0-9-]{1,64}$/.test(workspaceId)) {
+      return sendJson(response, 400, { error: '工作区 ID 无效' })
+    }
+
+    const avatarPath = path.join(AVATAR_DIR, `${workspaceId}.jpg`)
+
+    if (request.method === 'GET') {
+      try {
+        await fs.access(avatarPath)
+        response.statusCode = 200
+        response.setHeader('Content-Type', 'image/jpeg')
+        response.setHeader('Cache-Control', 'public, max-age=3600')
+        return createReadStream(avatarPath).pipe(response)
+      } catch {
+        return sendJson(response, 404, { error: '头像不存在' })
+      }
+    }
+
+    if (request.method === 'POST') {
+      const contentType = request.headers['content-type'] || ''
+      if (!ALLOWED_AVATAR_TYPES.has(contentType.split(';')[0].trim())) {
+        return sendJson(response, 400, { error: '仅支持 JPEG、PNG、GIF、WebP 格式的图片' })
+      }
+
+      await fs.mkdir(AVATAR_DIR, { recursive: true })
+      const temporaryPath = `${avatarPath}.${randomUUID()}.tmp`
+      let size = 0
+      const limiter = new Transform({
+        transform(chunk, encoding, callback) {
+          size += chunk.length
+          callback(size > MAX_AVATAR_SIZE ? new Error('头像文件不能超过 2 MB') : null, chunk)
+        }
+      })
+
+      try {
+        await pipeline(request, limiter, createWriteStream(temporaryPath, { flags: 'wx' }))
+        if (!size) throw new Error('头像文件内容为空')
+        await fs.rename(temporaryPath, avatarPath)
+      } catch (error) {
+        await fs.unlink(temporaryPath).catch(() => {})
+        throw error
+      }
+
+      return sendJson(response, 200, { message: '头像上传成功', avatarUrl: `/api/avatar/${workspaceId}` })
+    }
+
+    if (request.method === 'DELETE') {
+      try {
+        await fs.unlink(avatarPath)
+        return sendJson(response, 200, { message: '头像已删除' })
+      } catch (error) {
+        if (error?.code === 'ENOENT') {
+          return sendJson(response, 404, { error: '头像不存在' })
+        }
+        throw error
+      }
+    }
+
+    return sendJson(response, 405, { error: '不支持的请求方法' })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '头像处理失败'
+    return sendJson(response, 500, { error: message })
+  }
+}
+
 export default defineConfig({
   server: { host: '127.0.0.1', port: configuredPort, strictPort: true },
   preview: { host: '127.0.0.1', port: configuredPort, strictPort: true },
@@ -728,6 +805,7 @@ export default defineConfig({
         server.middlewares.use(systemMiddleware())
         server.middlewares.use(systemMonitorMiddleware())
         server.middlewares.use(shortcutMiddleware())
+        server.middlewares.use(avatarMiddleware())
       },
       configurePreviewServer(server) {
         server.middlewares.use(storageMiddleware())
@@ -737,6 +815,7 @@ export default defineConfig({
         server.middlewares.use(systemMiddleware())
         server.middlewares.use(systemMonitorMiddleware())
         server.middlewares.use(shortcutMiddleware())
+        server.middlewares.use(avatarMiddleware())
       }
     }
   ]

@@ -6,7 +6,8 @@ import {
   MoreHorizontal, Palette, Pencil, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles,
   Trash2, UnlockKeyhole, Upload, UserRound, X, Zap, PanelLeftClose, PanelLeftOpen, Download, FileUp, Power,
   Timer, Pause, RotateCcw, ChevronUp, Globe2, Bell, BarChart3, ChevronRight, Moon, Sun,
-  StickyNote, Code2, Cpu, HardDrive, Activity, Monitor, Clock, ArrowDown, ArrowUp, Wifi, FileText, Network, QrCode
+  StickyNote, Code2, Cpu, HardDrive, Activity, Monitor, Clock, ArrowDown, ArrowUp, Wifi, FileText, Network, QrCode,
+  Hash, ImageIcon
 } from 'lucide-react'
 import './styles.css'
 
@@ -109,6 +110,12 @@ const normalizeDashboardConfig = value => Array.isArray(value)
   ? [...new Set(value.filter(id => DASHBOARD_WIDGET_IDS.includes(id)))]
   : [...DASHBOARD_WIDGET_IDS]
 const getInitialDashboard = (workspaceId = 'personal') => normalizeDashboardConfig(portableStorage.data?.[workspaceId]?.dashboard)
+
+const SIDEBAR_TOOL_IDS = ['apps', 'pomodoro', 'httpclient', 'devtools', 'diff', 'network', 'qrcode', 'monitor', 'timestamp', 'uuid']
+const normalizeSidebarTools = value => Array.isArray(value)
+  ? [...new Set(value.filter(id => SIDEBAR_TOOL_IDS.includes(id)))]
+  : []
+const getInitialSidebarTools = (workspaceId = 'personal') => normalizeSidebarTools(portableStorage.data?.[workspaceId]?.sidebarTools)
 
 const POMODORO_STORAGE_KEY = 'pomodoro'
 const POMODORO_SESSION_KEY = 'pomodoro-session'
@@ -283,15 +290,71 @@ const navGroups = [
   ] }
 ]
 
+const getNavGroupsWithTools = (sidebarTools = [], language = 'zh') => {
+  const toolLabelMap = {
+    apps: language === 'en' ? 'App Launcher' : language === 'ja' ? 'アプリランチャー' : '应用启动器',
+    pomodoro: language === 'en' ? 'Pomodoro' : language === 'ja' ? 'ポモドーロ' : '番茄钟',
+    httpclient: language === 'en' ? 'HTTP Client' : language === 'ja' ? 'HTTPクライアント' : 'HTTP 测试',
+    devtools: language === 'en' ? 'Dev Tools' : language === 'ja' ? '開発ツール' : '开发工具',
+    diff: language === 'en' ? 'Diff Tool' : language === 'ja' ? 'ファイル比較' : '文件对比',
+    network: language === 'en' ? 'Network Tools' : language === 'ja' ? 'ネットワークツール' : '网络诊断',
+    qrcode: language === 'en' ? 'QR Code' : language === 'ja' ? 'QRコード生成' : '二维码生成',
+    monitor: language === 'en' ? 'System Monitor' : language === 'ja' ? 'システム監視' : '系统监控',
+    regex: language === 'en' ? 'Regex Tester' : language === 'ja' ? '正規表現テスター' : '正则测试',
+    timestamp: language === 'en' ? 'Timestamp Tool' : language === 'ja' ? 'タイムスタンプ変換' : '时间戳转换',
+    uuid: language === 'en' ? 'UUID Generator' : language === 'ja' ? 'UUID生成' : 'UUID生成器'
+  }
+
+  const toolIconMap = {
+    apps: AppWindow,
+    pomodoro: Timer,
+    httpclient: Zap,
+    devtools: Code2,
+    diff: FileText,
+    network: Network,
+    qrcode: QrCode,
+    monitor: Activity,
+    timestamp: Clock,
+    uuid: Hash
+  }
+
+  const baseGroups = [
+    { label: language === 'en' ? 'Workbench' : language === 'ja' ? 'ワークベンチ' : '工作台', items: [{ id: 'overview', label: language === 'en' ? 'Overview' : language === 'ja' ? '概要' : '概述', icon: LayoutDashboard }] },
+    { label: language === 'en' ? 'Resources' : language === 'ja' ? 'リソース' : '资源中心', items: [
+      { id: 'prompts', label: language === 'en' ? 'Prompt Library' : language === 'ja' ? 'プロンプトライブラリ' : '提示词库', icon: Sparkles, count: 12 },
+      { id: 'links', label: language === 'en' ? 'Bookmarks' : language === 'ja' ? 'ブックマーク' : '网址收藏', icon: ArrowUpRight },
+      { id: 'keys', label: 'API Keys', icon: KeyRound }
+    ] }
+  ]
+
+  const toolItems = sidebarTools.map(toolId => ({
+    id: toolId,
+    label: toolLabelMap[toolId] || toolId,
+    icon: toolIconMap[toolId] || Zap
+  }))
+
+  const toolsGroup = {
+    label: language === 'en' ? 'Tools' : language === 'ja' ? 'ツール' : '工具',
+    items: [
+      { id: 'tools', label: language === 'en' ? 'Toolbox' : language === 'ja' ? 'ツールボックス' : '工具箱', icon: Zap },
+      ...toolItems
+    ]
+  }
+
+  baseGroups.push(toolsGroup)
+
+  return baseGroups
+}
+
 const LANGUAGE_OPTIONS = [
   { id: 'zh', label: '中文' },
   { id: 'en', label: 'English' },
   { id: 'ja', label: '日本語' }
 ]
 const LANGUAGE_LABELS = {
-  zh: { overview: '概述', prompts: '提示词库', links: '网址收藏', keys: 'API Keys', books: '个人书库', tools: '工具箱', settings: '设置' },
-  en: { overview: 'Overview', prompts: 'Prompt Library', links: 'Bookmarks', keys: 'API Keys', books: 'Library', tools: 'Tools', settings: 'Settings' },
-  ja: { overview: '概要', prompts: 'プロンプト', links: 'ブックマーク', keys: 'API Keys', books: 'ライブラリ', tools: 'ツール', settings: '設定' }
+  zh: { overview: '概述', prompts: '提示词库', links: '网址收藏', keys: 'API Keys', books: '个人书库', tools: '工具箱', settings: '设置', apps: '应用启动器', pomodoro: '番茄钟', httpclient: 'HTTP 测试', devtools: '开发工具', diff: '文件对比', network: '网络诊断', qrcode: '二维码生成', monitor: '系统监控', timestamp: '时间戳转换', uuid: 'UUID生成器' },
+  en: { overview: 'Overview', prompts: 'Prompt Library', links: 'Bookmarks', keys: 'API Keys', books: 'Library', tools: 'Tools', settings: 'Settings', apps: 'App Launcher', pomodoro: 'Pomodoro', httpclient: 'HTTP Client', devtools: 'Dev Tools', diff: 'Diff Tool', network: 'Network Tools', qrcode: 'QR Code', monitor: 'System Monitor', timestamp: 'Timestamp Tool', uuid: 'UUID Generator' },
+  ja: { overview: '概要', prompts: 'プロンプト', links: 'ブックマーク', keys: 'API Keys', books: 'ライブラリ', tools: 'ツール', settings: '設定', apps: 'アプリランチャー', pomodoro: 'ポモドーロ', httpclient: 'HTTPクライアント', devtools: '開発ツール', diff: 'ファイル比較', network: 'ネットワークツール', qrcode: 'QRコード生成', monitor: 'システム監視', timestamp: 'タイムスタンプ変換', uuid: 'UUID生成' }
 }
 const storedLanguage = () => {
   if (typeof window === 'undefined') return 'zh'
@@ -386,6 +449,7 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
   const [pomodoroStats, setPomodoroStats] = useState(() => getInitialPomodoroStats(workspace.id))
   const [notes, setNotes] = useState(() => getInitialNotes(workspace.id))
   const [httpRequests, setHttpRequests] = useState(() => portableStorage.data?.[workspace.id]?.['http-requests'] || [])
+  const [sidebarTools, setSidebarTools] = useState(() => getInitialSidebarTools(workspace.id))
   const [query, setQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState('全部')
   const [modal, setModal] = useState(null)
@@ -423,6 +487,7 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
   useEffect(() => { persistWorkspaceData(workspace.id, POMODORO_STORAGE_KEY, serializePomodoroStats(pomodoroStats)).catch(() => setToast(localize('番茄钟统计保存失败，请重试', 'Unable to save Pomodoro statistics. Try again.', 'ポモドーロ統計を保存できません。もう一度お試しください。'))) }, [workspace.id, pomodoroStats])
   useEffect(() => { persistWorkspaceData(workspace.id, 'notes', notes).catch(() => {}) }, [workspace.id, notes])
   useEffect(() => { persistWorkspaceData(workspace.id, 'http-requests', httpRequests).catch(() => {}) }, [workspace.id, httpRequests])
+  useEffect(() => { persistWorkspaceData(workspace.id, 'sidebarTools', sidebarTools).catch(() => setToast(localize('侧边栏工具设置保存失败', 'Unable to save sidebar tools', 'サイドバーツール設定を保存できません'))) }, [workspace.id, sidebarTools])
   useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(''), 2200); return () => clearTimeout(timer) } }, [toast])
   useEffect(() => {
     const handleShortcut = event => {
@@ -468,6 +533,42 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
     if (normalized === workspace.name) return
     await onReplaceWorkspace({ ...workspace, name: normalized, avatar: normalized.slice(0, 1).toUpperCase() })
     setToast('工作区名称已更新')
+  }
+
+  const uploadWorkspaceAvatar = async file => {
+    if (!file) throw new Error('请选择头像文件')
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+      throw new Error('仅支持 JPEG、PNG、GIF、WebP 格式的图片')
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      throw new Error('头像文件不能超过 2 MB')
+    }
+
+    const response = await fetch(`/api/avatar/${workspace.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type },
+      body: file
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: '头像上传失败' }))
+      throw new Error(error.error || '头像上传失败')
+    }
+
+    setToast('头像上传成功')
+  }
+
+  const deleteWorkspaceAvatar = async () => {
+    const response = await fetch(`/api/avatar/${workspace.id}`, {
+      method: 'DELETE'
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: '头像删除失败' }))
+      throw new Error(error.error || '头像删除失败')
+    }
+
+    setToast('头像已删除')
   }
   const changeWorkspacePassword = async ({ currentPassword, newPassword, confirmPassword }) => {
     if (!currentPassword) throw new Error('请输入当前密码')
@@ -591,15 +692,20 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
     setActive(result.section)
   }
 
+  const dynamicNavGroups = useMemo(() => getNavGroupsWithTools(sidebarTools, language), [sidebarTools, language])
+
   return <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
     <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''}`}>
-      <div className="brand"><div className="brand-mark"><Grid2X2 size={17} strokeWidth={2.5} /></div><span>{language === 'en' ? 'Workbench' : language === 'ja' ? 'ワークベンチ' : '工作台'}</span></div>
-      <button className="sidebar-collapse-button" style={sidebarCollapsed ? { position: 'static', width: '100%', height: 39, margin: '48px 0 5px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 } : undefined} title={sidebarCollapsed ? (language === 'en' ? 'Expand sidebar' : language === 'ja' ? 'サイドバーを開く' : '展开侧边栏') : (language === 'en' ? 'Collapse sidebar' : language === 'ja' ? 'サイドバーを閉じる' : '收起侧边栏')} aria-label={sidebarCollapsed ? (language === 'en' ? 'Expand sidebar' : language === 'ja' ? 'サイドバーを開く' : '展开侧边栏') : (language === 'en' ? 'Collapse sidebar' : language === 'ja' ? 'サイドバーを閉じる' : '收起侧边栏')} onClick={() => setSidebarCollapsed(value => !value)}>{sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</button>
-      <WorkspaceSwitcher language={language} workspace={workspace} workspaces={workspaces} onSwitch={onSwitchWorkspace} onCreate={() => onSwitchWorkspace('__create__')} />
+      <div className="sidebar-header">
+        <WorkspaceSwitcher language={language} workspace={workspace} workspaces={workspaces} onSwitch={onSwitchWorkspace} onCreate={() => onSwitchWorkspace('__create__')} />
+      </div>
       <nav className="nav">
-        {navGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{language === 'en' ? (group.label === '工作台' ? 'WORKSPACE' : group.label === '资源中心' ? 'RESOURCES' : 'TOOLS') : language === 'ja' ? (group.label === '工作台' ? 'ワークスペース' : group.label === '资源中心' ? 'リソース' : 'ツール') : group.label}</div>{group.items.map(item => <button key={item.id} className={`nav-item ${active === item.id ? 'active' : ''}`} onClick={() => { setActive(item.id); setSidebarOpen(false) }}><item.icon size={17} /><span>{languageLabel(item.id, language)}</span>{item.id === 'prompts' && <span className="nav-count">{prompts.length}</span>}</button>)}</div>)}
+        {dynamicNavGroups.map((group, groupIndex) => <div className="nav-group" key={`${group.label}-${groupIndex}`}><div className="nav-label">{language === 'en' ? (group.label === '工作台' ? 'WORKSPACE' : group.label === '资源中心' ? 'RESOURCES' : 'TOOLS') : language === 'ja' ? (group.label === '工作台' ? 'ワークスペース' : group.label === '资源中心' ? 'リソース' : 'ツール') : group.label}</div>{group.items.map(item => <button key={item.id} className={`nav-item ${active === item.id ? 'active' : ''}`} onClick={() => { setActive(item.id); setSidebarOpen(false) }}><item.icon size={17} /><span>{languageLabel(item.id, language)}</span>{item.id === 'prompts' && <span className="nav-count">{prompts.length}</span>}</button>)}</div>)}
       </nav>
-       <div className="sidebar-footer"><button className={`nav-item ${active === 'settings' ? 'active' : ''}`} onClick={() => { setActive('settings'); setSidebarOpen(false) }}><Settings2 size={17} /><span>{languageLabel('settings', language)}</span></button></div>
+      <div className="sidebar-footer">
+        <button className={`nav-item ${active === 'settings' ? 'active' : ''}`} onClick={() => { setActive('settings'); setSidebarOpen(false) }}><Settings2 size={17} /><span>{languageLabel('settings', language)}</span></button>
+        <button className="sidebar-collapse-button" title={sidebarCollapsed ? (language === 'en' ? 'Expand sidebar' : language === 'ja' ? 'サイドバーを展開' : '展开侧边栏') : (language === 'en' ? 'Collapse sidebar' : language === 'ja' ? 'サイドバーを折りたたむ' : '收起侧边栏')} onClick={() => setSidebarCollapsed(value => !value)}>{sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</button>
+      </div>
     </aside>
     {sidebarOpen && <button className="backdrop" aria-label={language === 'en' ? 'Close menu' : language === 'ja' ? 'メニューを閉じる' : '关闭菜单'} onClick={() => setSidebarOpen(false)} />}
     <main className="main-content">
@@ -613,7 +719,7 @@ function WorkbenchApp({ workspace, workspaces, onSwitchWorkspace, encryptionKey,
          const normalized = normalizePomodoroStats(previous)
          const date = pomodoroDateKey(new Date())
          return normalizePomodoroStats({ totalSeconds: normalized.totalSeconds + seconds, daily: { ...normalized.daily, [date]: (normalized.daily[date] || 0) + seconds } })
-       })} /> : active === 'notes' ? <QuickNotes language={language} notes={notes} onSave={note => { const normalized = { ...note, title: note.title.trim(), content: note.content.trim(), updatedAt: Date.now() }; setNotes(prev => note.id ? prev.map(n => n.id === note.id ? normalized : n) : [{ ...normalized, id: Date.now() }, ...prev]); setToast(note.id ? (language === 'en' ? 'Note updated.' : language === 'ja' ? 'ノートを更新しました。' : '笔记已更新') : (language === 'en' ? 'Note created.' : language === 'ja' ? 'ノートを作成しました。' : '笔记已创建')) }} onDelete={id => { setNotes(prev => prev.filter(n => n.id !== id)); setToast(language === 'en' ? 'Note deleted.' : language === 'ja' ? 'ノートを削除しました。' : '笔记已删除') }} /> : active === 'tools' ? <ToolsHub language={language} onNavigate={toolId => setActive(toolId)} /> : active === 'apps' || active === 'pomodoro' || active === 'httpclient' || active === 'devtools' || active === 'diff' || active === 'network' || active === 'qrcode' || active === 'monitor' ? (active === 'apps' ? <AppLauncher language={language} /> : active === 'pomodoro' ? <Pomodoro language={language} stats={pomodoroStats} onComplete={seconds => { const date = pomodoroDateKey(new Date()); setPomodoroStats(prev => { const normalized = typeof prev === 'object' && prev !== null ? prev : { totalSeconds: 0, daily: {} }; return normalizePomodoroStats({ totalSeconds: normalized.totalSeconds + seconds, daily: { ...normalized.daily, [date]: (normalized.daily[date] || 0) + seconds } }) }) }} /> : active === 'httpclient' ? <HttpClient language={language} requests={httpRequests} apiKeys={apiKeys} encryptionKey={encryptionKey} onSave={request => { const normalized = { ...request, id: request.id || Date.now(), updatedAt: Date.now() }; setHttpRequests(prev => request.id ? prev.map(r => r.id === request.id ? normalized : r) : [normalized, ...prev]); setToast(request.id ? (language === 'en' ? 'Request updated.' : language === 'ja' ? 'リクエストを更新しました。' : '请求已更新') : (language === 'en' ? 'Request saved.' : language === 'ja' ? 'リクエストを保存しました。' : '请求已保存')) }} onDelete={id => { setHttpRequests(prev => prev.filter(r => r.id !== id)); setToast(language === 'en' ? 'Request deleted.' : language === 'ja' ? 'リクエストを削除しました。' : '请求已删除') }} /> : active === 'devtools' ? <DevTools language={language} /> : active === 'diff' ? <DiffTool language={language} /> : active === 'network' ? <NetworkTools language={language} /> : active === 'qrcode' ? <QRCodeGenerator language={language} /> : <SystemMonitor language={language} />) : active === 'settings' ? <SettingsPage language={language} workspace={workspace} startupEnabled={startupEnabled} serverPort={serverPort} darkMode={darkMode} onToggleDarkMode={toggleDarkMode} onToggleStartup={toggleStartup} onSaveServerPort={saveServerPort} onGetServiceStatus={getServiceStatus} onRestartService={restartService} onGetServiceLogs={getServiceLogs} onResetWorkbench={resetWorkbench} onRenameWorkspace={renameWorkspace} onChangePassword={changeWorkspacePassword} onExport={exportWorkspace} onImport={file => importWorkspace(file)} /> : <Placeholder language={language} title={languageLabel(active, language)} icon={navGroups.flatMap(g => g.items).find(i => i.id === active)?.icon} />}
+       })} /> : active === 'notes' ? <QuickNotes language={language} notes={notes} onSave={note => { const normalized = { ...note, title: note.title.trim(), content: note.content.trim(), updatedAt: Date.now() }; setNotes(prev => note.id ? prev.map(n => n.id === note.id ? normalized : n) : [{ ...normalized, id: Date.now() }, ...prev]); setToast(note.id ? (language === 'en' ? 'Note updated.' : language === 'ja' ? 'ノートを更新しました。' : '笔记已更新') : (language === 'en' ? 'Note created.' : language === 'ja' ? 'ノートを作成しました。' : '笔记已创建')) }} onDelete={id => { setNotes(prev => prev.filter(n => n.id !== id)); setToast(language === 'en' ? 'Note deleted.' : language === 'ja' ? 'ノートを削除しました。' : '笔记已删除') }} /> : active === 'tools' ? <ToolsHub language={language} onNavigate={toolId => setActive(toolId)} /> : active === 'apps' || active === 'pomodoro' || active === 'httpclient' || active === 'devtools' || active === 'diff' || active === 'network' || active === 'qrcode' || active === 'monitor' || active === 'timestamp' || active === 'uuid' ? (active === 'apps' ? <AppLauncher language={language} /> : active === 'pomodoro' ? <Pomodoro language={language} stats={pomodoroStats} onComplete={seconds => { const date = pomodoroDateKey(new Date()); setPomodoroStats(prev => { const normalized = typeof prev === 'object' && prev !== null ? prev : { totalSeconds: 0, daily: {} }; return normalizePomodoroStats({ totalSeconds: normalized.totalSeconds + seconds, daily: { ...normalized.daily, [date]: (normalized.daily[date] || 0) + seconds } }) }) }} /> : active === 'httpclient' ? <HttpClient language={language} requests={httpRequests} apiKeys={apiKeys} encryptionKey={encryptionKey} onSave={request => { const normalized = { ...request, id: request.id || Date.now(), updatedAt: Date.now() }; setHttpRequests(prev => request.id ? prev.map(r => r.id === request.id ? normalized : r) : [normalized, ...prev]); setToast(request.id ? (language === 'en' ? 'Request updated.' : language === 'ja' ? 'リクエストを更新しました。' : '请求已更新') : (language === 'en' ? 'Request saved.' : language === 'ja' ? 'リクエストを保存しました。' : '请求已保存')) }} onDelete={id => { setHttpRequests(prev => prev.filter(r => r.id !== id)); setToast(language === 'en' ? 'Request deleted.' : language === 'ja' ? 'リクエストを削除しました。' : '请求已删除') }} /> : active === 'devtools' ? <DevTools language={language} /> : active === 'diff' ? <DiffTool language={language} /> : active === 'network' ? <NetworkTools language={language} /> : active === 'qrcode' ? <QRCodeGenerator language={language} /> : active === 'timestamp' ? <TimestampConverter language={language} /> : active === 'uuid' ? <UUIDGenerator language={language} /> : <SystemMonitor language={language} />) : active === 'settings' ? <SettingsPage language={language} workspace={workspace} startupEnabled={startupEnabled} serverPort={serverPort} darkMode={darkMode} onToggleDarkMode={toggleDarkMode} onToggleStartup={toggleStartup} onSaveServerPort={saveServerPort} onGetServiceStatus={getServiceStatus} onRestartService={restartService} onGetServiceLogs={getServiceLogs} onResetWorkbench={resetWorkbench} onRenameWorkspace={renameWorkspace} onChangePassword={changeWorkspacePassword} onExport={exportWorkspace} onImport={file => importWorkspace(file)} onUploadAvatar={uploadWorkspaceAvatar} onDeleteAvatar={deleteWorkspaceAvatar} sidebarTools={sidebarTools} onSidebarToolsChange={setSidebarTools} /> : <Placeholder language={language} title={languageLabel(active, language)} icon={navGroups.flatMap(g => g.items).find(i => i.id === active)?.icon} />}
     </main>
       {modal?.mode === 'create' || modal?.mode === 'edit' ? <PromptModal language={language} modal={modal} onClose={() => setModal(null)} onSave={savePrompt} /> : null}
       {modal?.mode?.startsWith('link-') ? <LinkModal language={language} modal={modal} onClose={() => setModal(null)} onSave={saveLink} /> : null}
@@ -975,8 +1081,14 @@ function PromptLibrary({ language = 'zh', prompts, allPrompts, filteredCount, pa
 
 function WorkspaceSwitcher({ language = 'zh', workspace, workspaces, onSwitch, onCreate }) {
   const [open, setOpen] = useState(false)
+  const [avatarKey, setAvatarKey] = useState(Date.now())
   const copy = language === 'en' ? { local: 'Local workspace', switch: 'Switch workspace', create: 'Create workspace' } : language === 'ja' ? { local: 'ローカルワークスペース', switch: 'ワークスペースを切り替え', create: 'ワークスペースを作成' } : { local: '本地工作区', switch: '切换工作区', create: '新建工作区' }
-  return <div className="workspace-switch-wrap"><button className="workspace-switch" onClick={() => setOpen(value => !value)} aria-expanded={open}><div className="workspace-avatar">{workspace.avatar || 'W'}</div><div><strong>{workspace.name}</strong><span>{workspace.description || copy.local}</span></div><ChevronDown size={15} /></button>{open && <div className="workspace-menu"><div className="workspace-menu-label">{copy.switch}</div>{workspaces.map(item => <button key={item.id} className={item.id === workspace.id ? 'active' : ''} onClick={() => { setOpen(false); if (item.id !== workspace.id) onSwitch(item.id) }}><span className="workspace-menu-avatar">{item.avatar || item.name.slice(0, 1)}</span><span>{item.name}</span>{item.id === workspace.id && <Check size={14} />}</button>)}<button className="workspace-create" onClick={() => { setOpen(false); onCreate() }}><Plus size={15} />{copy.create}</button></div>}</div>
+
+  useEffect(() => {
+    setAvatarKey(Date.now())
+  }, [workspace.id])
+
+  return <div className="workspace-switch-wrap"><button className="workspace-switch" onClick={() => setOpen(value => !value)} aria-expanded={open}><div className="workspace-avatar workspace-avatar-main"><img src={`/api/avatar/${workspace.id}?t=${avatarKey}`} alt="" onError={event => { event.target.style.display = 'none'; event.target.nextElementSibling.style.display = 'flex' }} onLoad={event => { event.target.style.display = 'block'; event.target.nextElementSibling.style.display = 'none' }} /><div className="workspace-avatar-fallback" style={{ display: 'flex' }}>{workspace.avatar || 'W'}</div></div><div><strong>{workspace.name}</strong><span>{workspace.description || copy.local}</span></div><ChevronDown size={15} /></button>{open && <div className="workspace-menu"><div className="workspace-menu-label">{copy.switch}</div>{workspaces.map(item => <button key={item.id} className={item.id === workspace.id ? 'active' : ''} onClick={() => { setOpen(false); if (item.id !== workspace.id) onSwitch(item.id) }}><span className="workspace-menu-avatar"><img src={`/api/avatar/${item.id}?t=${avatarKey}`} alt="" onError={event => { event.target.style.display = 'none'; event.target.nextElementSibling.style.display = 'flex' }} onLoad={event => { event.target.style.display = 'block'; event.target.nextElementSibling.style.display = 'none' }} /><span className="workspace-menu-avatar-fallback" style={{ display: 'flex' }}>{item.avatar || item.name.slice(0, 1)}</span></span><span>{item.name}</span>{item.id === workspace.id && <Check size={14} />}</button>)}<button className="workspace-create" onClick={() => { setOpen(false); onCreate() }}><Plus size={15} />{copy.create}</button></div>}</div>
 }
 
 function SecurityGate({ language = 'zh', mode, workspace, onSetup, onUnlock, workspaces, switchingWorkspace, onImportConfig, onSelectWorkspace }) {
@@ -1166,14 +1278,19 @@ const settingsSections = [
   { id: 'data', label: '数据管理', icon: Database },
   { id: 'startup', label: '启动设置', icon: Power },
   { id: 'appearance', label: '外观', icon: Palette },
-  { id: 'language', label: '语言', icon: Globe2 }
+  { id: 'language', label: '语言', icon: Globe2 },
+  { id: 'sidebar', label: '侧边栏', icon: LayoutDashboard }
 ]
 
-function SettingsPage({ language = 'zh', workspace, startupEnabled, serverPort, onToggleStartup, onSaveServerPort, onGetServiceStatus, onRestartService, onGetServiceLogs, onResetWorkbench, onRenameWorkspace, onChangePassword, onExport, onImport, darkMode, onToggleDarkMode }) {
+function SettingsPage({ language = 'zh', workspace, startupEnabled, serverPort, onToggleStartup, onSaveServerPort, onGetServiceStatus, onRestartService, onGetServiceLogs, onResetWorkbench, onRenameWorkspace, onChangePassword, onExport, onImport, darkMode, onToggleDarkMode, onUploadAvatar, onDeleteAvatar, sidebarTools, onSidebarToolsChange }) {
   const [section, setSection] = useState('workspace')
   const [workspaceName, setWorkspaceName] = useState(workspace.name)
   const [nameError, setNameError] = useState('')
   const [nameSaved, setNameSaved] = useState(false)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarError, setAvatarError] = useState('')
+  const [avatarMessage, setAvatarMessage] = useState('')
+  const [avatarKey, setAvatarKey] = useState(Date.now())
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
   const [passwordError, setPasswordError] = useState('')
   const [passwordSaved, setPasswordSaved] = useState(false)
@@ -1189,7 +1306,7 @@ function SettingsPage({ language = 'zh', workspace, startupEnabled, serverPort, 
   const [serviceMessage, setServiceMessage] = useState('')
   const [serviceBusy, setServiceBusy] = useState('')
   const [serviceLogs, setServiceLogs] = useState(null)
-  const settingsCopy = language === 'en' ? { title: 'Settings', desc: 'Manage the current workspace, security, data and local service.', nav: 'Settings', workspace: 'Workspace', security: 'Password & security', data: 'Data management', startup: 'Startup', language: 'Language', appearance: 'Appearance', workspaceDesc: 'Change the display name of this workspace.', name: 'Workspace name', save: 'Save changes', id: 'Workspace ID', idHint: 'Used to isolate local data and cannot be changed.', securityDesc: `Change the password used to enter “${workspace.name}”.`, dataDesc: 'Export this workspace or restore it from an encrypted file.', startupDesc: 'Control the local service after signing in to Windows.', appearanceDesc: 'Switch between light and dark mode.', darkModeLabel: 'Dark mode', darkModeHint: 'Use a darker color palette throughout the interface.', current: 'Current password', newPassword: 'New password', confirmPassword: 'Confirm new password', passwordPlaceholder: 'Enter workspace password', newPasswordPlaceholder: 'At least 8 characters', reencrypt: 'Saved API Keys will be re-encrypted with the new password.', update: 'Update password', exporting: 'Export workspace config', importing: 'Import workspace config', exportHint: 'Prompts, bookmarks and encrypted API keys are included.', importHint: 'Enter the original password; an existing workspace can be overwritten.', auto: 'Start on Windows login', autoHint: 'Start the local workbench service after signing in to Windows.', port: 'Binding port', portHint: 'Listens only on 127.0.0.1; changes restart the service automatically.', on: 'On', off: 'Off', saving: 'Saving...', savePort: 'Save port', service: 'Service status', serviceHint: 'Monitor and manage the local service currently running this workbench.', online: 'Running', offline: 'Unavailable', refresh: 'Refresh status', restart: 'Restart service', restarting: 'Restarting...', logs: 'View logs', hideLogs: 'Hide logs', noLogs: 'No local service logs yet.', pid: 'PID', uptime: 'Uptime', restartQueued: 'The service is restarting. This page will reopen shortly.', statusLoaded: 'Service status refreshed.', reset: 'Restore initial state', resetHint: 'Deletes every workspace, password, API key, prompt, bookmark and shortcut. Startup is disabled and the port returns to 5180. Export a backup first.', resetConfirm: 'Restore the workbench to its initial state?\n\nAll local workspaces and data will be permanently deleted. The service will restart on port 5180.', resetting: 'Restoring...', resetQueued: 'Initial state is being restored. This page will reopen at port 5180 shortly.', resetFailed: 'Unable to restore the initial state.', portRestart: port => `The service is restarting. It will open http://127.0.0.1:${port}/ shortly.`, portCurrent: 'The service is already bound to this port.' } : language === 'ja' ? { title: '設定', desc: 'ワークスペース、セキュリティ、データ、ローカルサービスを管理します。', nav: '設定', workspace: 'ワークスペース', security: 'パスワードとセキュリティ', data: 'データ管理', startup: '起動設定', language: '言語', appearance: '外観', workspaceDesc: 'ワークスペースの表示名を変更します。', name: 'ワークスペース名', save: '変更を保存', id: 'ワークスペースID', idHint: 'ローカルデータの分離に使用され、変更できません。', securityDesc: `「${workspace.name}」に入るパスワードを変更します。`, dataDesc: '暗号化ファイルからデータをエクスポート・復元します。', startupDesc: 'Windowsログイン後のローカルサービスを制御します。', appearanceDesc: 'ライトモードとダークモードを切り替えます。', darkModeLabel: 'ダークモード', darkModeHint: 'インターフェース全体で暗い配色を使用します。', current: '現在のパスワード', newPassword: '新しいパスワード', confirmPassword: '新しいパスワードを確認', passwordPlaceholder: 'ワークスペースのパスワードを入力', newPasswordPlaceholder: '8文字以上', reencrypt: '保存済みのAPI Keyは新しいパスワードで再暗号化されます。', update: 'パスワードを更新', exporting: 'ワークスペース設定をエクスポート', importing: 'ワークスペース設定をインポート', exportHint: 'プロンプト、ブックマーク、暗号化API Keyを含みます。', importHint: '元のパスワードが必要です。同名ワークスペースは上書きできます。', auto: 'Windowsログイン時に起動', autoHint: 'Windowsログイン後にローカルサービスを起動します。', port: 'バインドポート', portHint: '127.0.0.1のみで待ち受け、変更後は自動再起動します。', on: 'オン', off: 'オフ', saving: '保存中...', savePort: 'ポートを保存', service: 'サービス状態', serviceHint: 'このワークベンチを実行中のローカルサービスを管理します。', online: '稼働中', offline: '利用不可', refresh: '状態を更新', restart: 'サービスを再起動', restarting: '再起動中...', logs: 'ログを表示', hideLogs: 'ログを隠す', noLogs: 'ローカルサービスのログはまだありません。', pid: 'PID', uptime: '稼働時間', restartQueued: 'サービスを再起動しています。このページはまもなく再度開きます。', statusLoaded: 'サービス状態を更新しました。', reset: '初期状態に戻す', resetHint: 'すべてのワークスペース、パスワード、API Key、プロンプト、ブックマーク、ショートカットを削除します。自動起動は無効になり、ポートは5180に戻ります。先にバックアップをエクスポートしてください。', resetConfirm: 'ワークベンチを初期状態に戻しますか？\n\nすべてのローカルワークスペースとデータが完全に削除され、ポート5180で再起動します。', resetting: '復元中...', resetQueued: '初期状態を復元しています。まもなくポート5180で開きます。', resetFailed: '初期状態を復元できません。', portRestart: port => `サービスを再起動しています。まもなく http://127.0.0.1:${port}/ を開きます。`, portCurrent: 'サービスはすでにこのポートにバインドされています。' } : { title: '设置', desc: '管理当前工作区、安全、数据与本地服务。', nav: '设置', workspace: '工作区', security: '密码与安全', data: '数据管理', startup: '启动设置', language: '语言', appearance: '外观', workspaceDesc: '修改当前工作区的显示名称。', name: '工作区名称', save: '保存更改', id: '工作区标识', idHint: '用于隔离本机数据，创建后不可修改。', securityDesc: `修改进入”${workspace.name}”时使用的密码。`, dataDesc: '导出当前工作区,或从加密配置文件恢复数据。', startupDesc: '控制 Windows 登录后的本地服务行为。', appearanceDesc: '在浅色和深色模式之间切换。', darkModeLabel: '深色模式', darkModeHint: '在整个界面使用较暗的配色方案。', current: '当前密码', newPassword: '新密码', confirmPassword: '确认新密码', passwordPlaceholder: '输入当前工作区密码', newPasswordPlaceholder: '至少 8 位字符', reencrypt: '修改后，当前工作区保存的 API Key 会自动使用新密码重新加密。', update: '更新密码', exporting: '导出工作区配置', importing: '导入工作区配置', exportHint: '提示词、网址和 API Key 密文会被打包并再次加密。', importHint: '需要输入配置原密码；同名工作区可以选择覆盖，密码也会被覆盖。', auto: '开机自启动', autoHint: '登录 Windows 后自动启动本地工作台服务。', port: '绑定端口', portHint: '服务只监听 127.0.0.1；修改后会自动重启并打开新地址。', on: '已开启', off: '已关闭', saving: '保存中...', savePort: '保存端口', service: '服务状态', serviceHint: '查看并管理当前运行此工作台的本地服务。', online: '运行中', offline: '无法连接', refresh: '刷新状态', restart: '重启服务', restarting: '正在重启...', logs: '查看日志', hideLogs: '收起日志', noLogs: '暂时没有本地服务日志。', pid: '进程 ID', uptime: '运行时长', restartQueued: '服务正在重启，页面将在几秒后重新打开。', statusLoaded: '服务状态已刷新。', reset: '恢复初始状态', resetHint: '会删除所有工作区、密码、API Key、提示词、网址和快捷方式；同时关闭自启动，并将端口恢复为 5180。建议先导出配置备份。', resetConfirm: '确定恢复工作台初始状态吗？\n\n所有本地工作区和数据将被永久删除，服务会重启到 5180 端口。', resetting: '正在恢复...', resetQueued: '正在恢复初始状态，页面将在几秒后通过 5180 端口重新打开。', resetFailed: '恢复初始状态失败。', portRestart: port => `正在自动重启；服务就绪后会打开 http://127.0.0.1:${port}/`, portCurrent: '当前服务已绑定该端口。' }
+  const settingsCopy = language === 'en' ? { title: 'Settings', desc: 'Manage the current workspace, security, data and local service.', nav: 'Settings', workspace: 'Workspace', security: 'Password & security', data: 'Data management', startup: 'Startup', language: 'Language', appearance: 'Appearance', sidebar: 'Sidebar', workspaceDesc: 'Change the display name of this workspace.', name: 'Workspace name', save: 'Save changes', id: 'Workspace ID', idHint: 'Used to isolate local data and cannot be changed.', avatar: 'Workspace avatar', avatarHint: 'Upload a custom avatar for this workspace (max 2 MB, JPEG/PNG/GIF/WebP).', uploadAvatar: 'Upload avatar', removeAvatar: 'Remove avatar', uploading: 'Uploading...', securityDesc: `Change the password used to enter “${workspace.name}”.`, dataDesc: 'Export this workspace or restore it from an encrypted file.', startupDesc: 'Control the local service after signing in to Windows.', appearanceDesc: 'Switch between light and dark mode.', darkModeLabel: 'Dark mode', darkModeHint: 'Use a darker color palette throughout the interface.', sidebarDesc: 'Choose which tools appear in the Tools section of the sidebar.', sidebarHint: 'Tools in the toolbox can be added to the sidebar for quick access.', configureSidebar: 'Configure sidebar tools', selectTools: 'Select tools to show in sidebar', current: 'Current password', newPassword: 'New password', confirmPassword: 'Confirm new password', passwordPlaceholder: 'Enter workspace password', newPasswordPlaceholder: 'At least 8 characters', reencrypt: 'Saved API Keys will be re-encrypted with the new password.', update: 'Update password', exporting: 'Export workspace config', importing: 'Import workspace config', exportHint: 'Prompts, bookmarks and encrypted API keys are included.', importHint: 'Enter the original password; an existing workspace can be overwritten.', auto: 'Start on Windows login', autoHint: 'Start the local workbench service after signing in to Windows.', port: 'Binding port', portHint: 'Listens only on 127.0.0.1; changes restart the service automatically.', on: 'On', off: 'Off', saving: 'Saving...', savePort: 'Save port', service: 'Service status', serviceHint: 'Monitor and manage the local service currently running this workbench.', online: 'Running', offline: 'Unavailable', refresh: 'Refresh status', restart: 'Restart service', restarting: 'Restarting...', logs: 'View logs', hideLogs: 'Hide logs', noLogs: 'No local service logs yet.', pid: 'PID', uptime: 'Uptime', restartQueued: 'The service is restarting. This page will reopen shortly.', statusLoaded: 'Service status refreshed.', reset: 'Restore initial state', resetHint: 'Deletes every workspace, password, API key, prompt, bookmark and shortcut. Startup is disabled and the port returns to 5180. Export a backup first.', resetConfirm: 'Restore the workbench to its initial state?\n\nAll local workspaces and data will be permanently deleted. The service will restart on port 5180.', resetting: 'Restoring...', resetQueued: 'Initial state is being restored. This page will reopen at port 5180 shortly.', resetFailed: 'Unable to restore the initial state.', portRestart: port => `The service is restarting. It will open http://127.0.0.1:${port}/ shortly.`, portCurrent: 'The service is already bound to this port.' } : language === 'ja' ? { title: '設定', desc: 'ワークスペース、セキュリティ、データ、ローカルサービスを管理します。', nav: '設定', workspace: 'ワークスペース', security: 'パスワードとセキュリティ', data: 'データ管理', startup: '起動設定', language: '言語', appearance: '外観', sidebar: 'サイドバー', workspaceDesc: 'ワークスペースの表示名を変更します。', name: 'ワークスペース名', save: '変更を保存', id: 'ワークスペースID', idHint: 'ローカルデータの分離に使用され、変更できません。', avatar: 'ワークスペースのアバター', avatarHint: 'カスタムアバターをアップロード（最大2 MB、JPEG/PNG/GIF/WebP）。', uploadAvatar: 'アバターをアップロード', removeAvatar: 'アバターを削除', uploading: 'アップロード中...', securityDesc: `「${workspace.name}」に入るパスワードを変更します。`, dataDesc: '暗号化ファイルからデータをエクスポート・復元します。', startupDesc: 'Windowsログイン後のローカルサービスを制御します。', appearanceDesc: 'ライトモードとダークモードを切り替えます。', darkModeLabel: 'ダークモード', darkModeHint: 'インターフェース全体で暗い配色を使用します。', sidebarDesc: 'サイドバーのツールセクションに表示するツールを選択します。', sidebarHint: 'ツールボックス内のツールをサイドバーに追加できます。', configureSidebar: 'サイドバーツールを設定', selectTools: 'サイドバーに表示するツールを選択', current: '現在のパスワード', newPassword: '新しいパスワード', confirmPassword: '新しいパスワードを確認', passwordPlaceholder: 'ワークスペースのパスワードを入力', newPasswordPlaceholder: '8文字以上', reencrypt: '保存済みのAPI Keyは新しいパスワードで再暗号化されます。', update: 'パスワードを更新', exporting: 'ワークスペース設定をエクスポート', importing: 'ワークスペース設定をインポート', exportHint: 'プロンプト、ブックマーク、暗号化API Keyを含みます。', importHint: '元のパスワードが必要です。同名ワークスペースは上書きできます。', auto: 'Windowsログイン時に起動', autoHint: 'Windowsログイン後にローカルサービスを起動します。', port: 'バインドポート', portHint: '127.0.0.1のみで待ち受け、変更後は自動再起動します。', on: 'オン', off: 'オフ', saving: '保存中...', savePort: 'ポートを保存', service: 'サービス状態', serviceHint: 'このワークベンチを実行中のローカルサービスを管理します。', online: '稼働中', offline: '利用不可', refresh: '状態を更新', restart: 'サービスを再起動', restarting: '再起動中...', logs: 'ログを表示', hideLogs: 'ログを隠す', noLogs: 'ローカルサービスのログはまだありません。', pid: 'PID', uptime: '稼働時間', restartQueued: 'サービスを再起動しています。このページはまもなく再度開きます。', statusLoaded: 'サービス状態を更新しました。', reset: '初期状態に戻す', resetHint: 'すべてのワークスペース、パスワード、API Key、プロンプト、ブックマーク、ショートカットを削除します。自動起動は無効になり、ポートは5180に戻ります。先にバックアップをエクスポートしてください。', resetConfirm: 'ワークベンチを初期状態に戻しますか？\n\nすべてのローカルワークスペースとデータが完全に削除され、ポート5180で再起動します。', resetting: '復元中...', resetQueued: '初期状態を復元しています。まもなくポート5180で開きます。', resetFailed: '初期状態を復元できません。', portRestart: port => `サービスを再起動しています。まもなく http://127.0.0.1:${port}/ を開きます。`, portCurrent: 'サービスはすでにこのポートにバインドされています。' } : { title: '设置', desc: '管理当前工作区、安全、数据与本地服务。', nav: '设置', workspace: '工作区', security: '密码与安全', data: '数据管理', startup: '启动设置', language: '语言', appearance: '外观', sidebar: '侧边栏', workspaceDesc: '修改当前工作区的显示名称。', name: '工作区名称', save: '保存更改', id: '工作区标识', idHint: '用于隔离本机数据，创建后不可修改。', avatar: '工作区头像', avatarHint: '上传自定义头像（最大 2 MB，支持 JPEG/PNG/GIF/WebP 格式）。', uploadAvatar: '上传头像', removeAvatar: '删除头像', uploading: '上传中...', securityDesc: `修改进入”${workspace.name}”时使用的密码。`, dataDesc: '导出当前工作区,或从加密配置文件恢复数据。', startupDesc: '控制 Windows 登录后的本地服务行为。', appearanceDesc: '在浅色和深色模式之间切换。', darkModeLabel: '深色模式', darkModeHint: '在整个界面使用较暗的配色方案。', sidebarDesc: '选择在侧边栏工具区域显示哪些工具。', sidebarHint: '工具箱中的工具可以添加到侧边栏以便快速访问。', configureSidebar: '配置侧边栏工具', selectTools: '选择要在侧边栏显示的工具', current: '当前密码', newPassword: '新密码', confirmPassword: '确认新密码', passwordPlaceholder: '输入当前工作区密码', newPasswordPlaceholder: '至少 8 位字符', reencrypt: '修改后，当前工作区保存的 API Key 会自动使用新密码重新加密。', update: '更新密码', exporting: '导出工作区配置', importing: '导入工作区配置', exportHint: '提示词、网址和 API Key 密文会被打包并再次加密。', importHint: '需要输入配置原密码；同名工作区可以选择覆盖，密码也会被覆盖。', auto: '开机自启动', autoHint: '登录 Windows 后自动启动本地工作台服务。', port: '绑定端口', portHint: '服务只监听 127.0.0.1；修改后会自动重启并打开新地址。', on: '已开启', off: '已关闭', saving: '保存中...', savePort: '保存端口', service: '服务状态', serviceHint: '查看并管理当前运行此工作台的本地服务。', online: '运行中', offline: '无法连接', refresh: '刷新状态', restart: '重启服务', restarting: '正在重启...', logs: '查看日志', hideLogs: '收起日志', noLogs: '暂时没有本地服务日志。', pid: '进程 ID', uptime: '运行时长', restartQueued: '服务正在重启，页面将在几秒后重新打开。', statusLoaded: '服务状态已刷新。', reset: '恢复初始状态', resetHint: '会删除所有工作区、密码、API Key、提示词、网址和快捷方式；同时关闭自启动，并将端口恢复为 5180。建议先导出配置备份。', resetConfirm: '确定恢复工作台初始状态吗？\n\n所有本地工作区和数据将被永久删除，服务会重启到 5180 端口。', resetting: '正在恢复...', resetQueued: '正在恢复初始状态，页面将在几秒后通过 5180 端口重新打开。', resetFailed: '恢复初始状态失败。', portRestart: port => `正在自动重启；服务就绪后会打开 http://127.0.0.1:${port}/`, portCurrent: '当前服务已绑定该端口。' }
 
   useEffect(() => setWorkspaceName(workspace.name), [workspace.name])
   useEffect(() => setPortValue(String(serverPort)), [serverPort])
@@ -1225,6 +1342,41 @@ function SettingsPage({ language = 'zh', workspace, startupEnabled, serverPort, 
       await onRenameWorkspace(workspaceName)
       setNameSaved(true)
     } catch (error) { setNameError(error.message || '工作区名称修改失败') }
+  }
+
+  const handleAvatarUpload = async event => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setAvatarError('')
+    setAvatarMessage('')
+    setAvatarUploading(true)
+
+    try {
+      await onUploadAvatar(file)
+      setAvatarMessage(language === 'en' ? 'Avatar uploaded successfully' : language === 'ja' ? 'アバターをアップロードしました' : '头像上传成功')
+      setAvatarKey(Date.now())
+    } catch (error) {
+      setAvatarError(error.message || (language === 'en' ? 'Avatar upload failed' : language === 'ja' ? 'アバターのアップロードに失敗しました' : '头像上传失败'))
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+  const handleAvatarDelete = async () => {
+    if (!window.confirm(language === 'en' ? 'Delete this avatar?' : language === 'ja' ? 'このアバターを削除しますか？' : '确定删除此头像吗？')) return
+
+    setAvatarError('')
+    setAvatarMessage('')
+
+    try {
+      await onDeleteAvatar()
+      setAvatarMessage(language === 'en' ? 'Avatar deleted' : language === 'ja' ? 'アバターを削除しました' : '头像已删除')
+      setAvatarKey(Date.now())
+    } catch (error) {
+      setAvatarError(error.message || (language === 'en' ? 'Avatar deletion failed' : language === 'ja' ? 'アバターの削除に失敗しました' : '头像删除失败'))
+    }
   }
   const savePassword = async event => {
     event.preventDefault()
@@ -1283,6 +1435,31 @@ function SettingsPage({ language = 'zh', workspace, startupEnabled, serverPort, 
             <label><span>{settingsCopy.name}</span><input value={workspaceName} onChange={event => { setWorkspaceName(event.target.value); setNameError(''); setNameSaved(false) }} maxLength={40} /></label>
             <div className="settings-form-footer"><div className={`settings-feedback ${nameError ? 'error' : ''}`}>{nameError || (nameSaved ? (language === 'en' ? 'Name saved' : language === 'ja' ? '名前を保存しました' : '名称已保存') : '')}</div><button className="primary-button" type="submit" disabled={!workspaceName.trim() || workspaceName.trim() === workspace.name}>{settingsCopy.save}</button></div>
           </form>
+          <div className="settings-detail-row settings-avatar-row">
+            <div>
+              <strong>{settingsCopy.avatar}</strong>
+              <span>{settingsCopy.avatarHint}</span>
+              {avatarError && <span className="settings-port-feedback error">{avatarError}</span>}
+              {avatarMessage && <span className="settings-port-feedback">{avatarMessage}</span>}
+            </div>
+            <div className="settings-avatar-control">
+              <div className="settings-avatar-preview">
+                <img key={avatarKey} src={`/api/avatar/${workspace.id}?t=${avatarKey}`} alt="" onError={event => { event.target.style.display = 'none'; event.target.nextElementSibling.style.display = 'flex' }} onLoad={event => { event.target.style.display = 'block'; event.target.nextElementSibling.style.display = 'none' }} />
+                <div className="settings-avatar-fallback" style={{ display: 'flex' }}>{workspace.avatar || workspace.name.slice(0, 1).toUpperCase()}</div>
+              </div>
+              <div className="settings-avatar-actions">
+                <label className="secondary-button" style={{ pointerEvents: avatarUploading ? 'none' : 'auto', opacity: avatarUploading ? 0.6 : 1 }}>
+                  <Upload size={16} />
+                  {avatarUploading ? settingsCopy.uploading : settingsCopy.uploadAvatar}
+                  <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={handleAvatarUpload} disabled={avatarUploading} style={{ display: 'none' }} />
+                </label>
+                <button className="secondary-button" onClick={handleAvatarDelete} disabled={avatarUploading}>
+                  <Trash2 size={16} />
+                  {settingsCopy.removeAvatar}
+                </button>
+              </div>
+            </div>
+          </div>
            <div className="settings-detail-row"><div><strong>{settingsCopy.id}</strong><span>{settingsCopy.idHint}</span></div><code>{workspace.id}</code></div>
         </section>}
         {section === 'security' && <section className="settings-section">
@@ -1329,12 +1506,120 @@ function SettingsPage({ language = 'zh', workspace, startupEnabled, serverPort, 
              </label>
            </div>
          </section>}
+         {section === 'sidebar' && <section className="settings-section">
+           <div className="settings-section-heading">
+             <h2>{settingsCopy.sidebar}</h2>
+             <p>{settingsCopy.sidebarDesc}</p>
+           </div>
+           <SidebarToolsConfig language={language} tools={sidebarTools} onChange={onSidebarToolsChange} />
+         </section>}
       </div>
     </div>
   </section>
 }
 
 function Placeholder({ language = 'zh', title, icon: Icon }) { const copy = language === 'en' ? { title: 'This module will be available in a future release.', hint: 'Build your workbench foundation first, then add capabilities step by step.' } : language === 'ja' ? { title: 'このモジュールは今後のバージョンで利用可能になります。', hint: 'まずワークベンチの土台を整え、機能を段階的に追加しましょう。' } : { title: '这个模块将在后续版本中开放。', hint: '先把你的工作台骨架搭好，再逐步加入更多能力。' }; return <section className="page placeholder-page"><div className="placeholder-icon">{Icon && <Icon size={28} />}</div><h1>{title}</h1><p>{copy.title}</p><span>{copy.hint}</span></section> }
+
+function SidebarToolsConfig({ language = 'zh', tools = [], onChange }) {
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 4
+
+  const allTools = [
+    { id: 'apps', icon: AppWindow, label: language === 'en' ? 'App Launcher' : language === 'ja' ? 'アプリランチャー' : '应用启动器' },
+    { id: 'pomodoro', icon: Timer, label: language === 'en' ? 'Pomodoro' : language === 'ja' ? 'ポモドーロ' : '番茄钟' },
+    { id: 'httpclient', icon: Zap, label: language === 'en' ? 'HTTP Client' : language === 'ja' ? 'HTTPクライアント' : 'HTTP 测试' },
+    { id: 'devtools', icon: Code2, label: language === 'en' ? 'Dev Tools' : language === 'ja' ? '開発ツール' : '开发工具' },
+    { id: 'diff', icon: FileText, label: language === 'en' ? 'Diff Tool' : language === 'ja' ? 'ファイル比較' : '文件对比' },
+    { id: 'network', icon: Network, label: language === 'en' ? 'Network Tools' : language === 'ja' ? 'ネットワークツール' : '网络诊断' },
+    { id: 'qrcode', icon: QrCode, label: language === 'en' ? 'QR Code' : language === 'ja' ? 'QRコード生成' : '二维码生成' },
+    { id: 'monitor', icon: Activity, label: language === 'en' ? 'System Monitor' : language === 'ja' ? 'システム監視' : '系统监控' },
+    { id: 'timestamp', icon: Clock, label: language === 'en' ? 'Timestamp' : language === 'ja' ? 'タイムスタンプ変換' : '时间戳转换' },
+    { id: 'uuid', icon: Hash, label: language === 'en' ? 'UUID Generator' : language === 'ja' ? 'UUID生成器' : 'UUID生成器' }
+  ]
+
+  const copy = language === 'en' ? {
+    selectTools: 'Select tools to show in sidebar',
+    hint: 'Selected tools will appear directly in the sidebar instead of inside the toolbox.',
+    moveUp: 'Move up',
+    moveDown: 'Move down',
+    previous: 'Previous',
+    next: 'Next'
+  } : language === 'ja' ? {
+    selectTools: 'サイドバーに表示するツールを選択',
+    hint: '選択したツールはツールボックス内ではなく、サイドバーに直接表示されます。',
+    moveUp: '上へ移動',
+    moveDown: '下へ移動',
+    previous: '前へ',
+    next: '次へ'
+  } : {
+    selectTools: '选择要在侧边栏显示的工具',
+    hint: '选中的工具将直接显示在侧边栏中，而不是放在工具箱内。',
+    moveUp: '上移',
+    moveDown: '下移',
+    previous: '上一页',
+    next: '下一页'
+  }
+
+  const toggleTool = id => {
+    onChange(tools.includes(id) ? tools.filter(t => t !== id) : [...tools, id])
+  }
+
+  const moveTool = (id, direction) => {
+    const index = tools.indexOf(id)
+    const target = index + direction
+    if (index < 0 || target < 0 || target >= tools.length) return
+    const next = [...tools]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    onChange(next)
+  }
+
+  const totalPages = Math.ceil(allTools.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const currentTools = allTools.slice(startIndex, endIndex)
+
+  return <div className="sidebar-tools-wrapper">
+    <div className="sidebar-tools-config">
+      {currentTools.map(tool => {
+        const enabled = tools.includes(tool.id)
+        const index = tools.indexOf(tool.id)
+        return <div className={`sidebar-tool-option ${enabled ? 'is-enabled' : ''}`} key={tool.id}>
+          <label className="sidebar-tool-check-label">
+            <input type="checkbox" checked={enabled} onChange={() => toggleTool(tool.id)} />
+            <span className="sidebar-tool-checkbox" />
+            <tool.icon size={17} />
+            <span>{tool.label}</span>
+          </label>
+          <div className="sidebar-tool-order">
+            <button type="button" title={copy.moveUp} aria-label={`${copy.moveUp}: ${tool.label}`} disabled={!enabled || index <= 0} onClick={() => moveTool(tool.id, -1)}>
+              <ChevronUp size={14} />
+            </button>
+            <button type="button" title={copy.moveDown} aria-label={`${copy.moveDown}: ${tool.label}`} disabled={!enabled || index < 0 || index >= tools.length - 1} onClick={() => moveTool(tool.id, 1)}>
+              <ChevronDown size={14} />
+            </button>
+          </div>
+        </div>
+      })}
+    </div>
+    {totalPages > 1 && <div className="sidebar-tools-pagination">
+      <button className="page-arrow" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+        <ChevronLeft size={16} />
+        {copy.previous}
+      </button>
+      <div className="page-numbers">
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+          <button key={page} className={page === currentPage ? 'active' : ''} onClick={() => setCurrentPage(page)}>
+            {page}
+          </button>
+        ))}
+      </div>
+      <button className="page-arrow" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+        {copy.next}
+        <ChevronRight size={16} />
+      </button>
+    </div>}
+  </div>
+}
 
 function QuickNotes({ language = 'zh', notes, onSave, onDelete }) {
   const [editingNote, setEditingNote] = useState(null)
@@ -1972,7 +2257,9 @@ function ToolsHub({ language = 'zh', onNavigate }) {
     { id: 'diff', icon: FileText, title: language === 'en' ? 'Diff Tool' : language === 'ja' ? 'ファイル比較' : '文件对比', desc: language === 'en' ? 'Text difference comparison' : language === 'ja' ? 'テキストの差分比較' : '文本差异对比' },
     { id: 'network', icon: Network, title: language === 'en' ? 'Network Tools' : language === 'ja' ? 'ネットワークツール' : '网络诊断', desc: language === 'en' ? 'Ping/DNS testing' : language === 'ja' ? 'Ping/DNS テスト' : 'Ping/DNS 测试' },
     { id: 'qrcode', icon: QrCode, title: language === 'en' ? 'QR Code' : language === 'ja' ? 'QRコード生成' : '二维码生成', desc: language === 'en' ? 'Generate QR codes' : language === 'ja' ? 'QRコードを生成' : '生成二维码' },
-    { id: 'monitor', icon: Activity, title: language === 'en' ? 'System Monitor' : language === 'ja' ? 'システム監視' : '系统监控', desc: language === 'en' ? 'Resource monitoring' : language === 'ja' ? 'リソース監視' : '系统资源监控' }
+    { id: 'monitor', icon: Activity, title: language === 'en' ? 'System Monitor' : language === 'ja' ? 'システム監視' : '系统监控', desc: language === 'en' ? 'Resource monitoring' : language === 'ja' ? 'リソース監視' : '系统资源监控' },
+    { id: 'timestamp', icon: Clock, title: language === 'en' ? 'Timestamp Tool' : language === 'ja' ? 'タイムスタンプ変換' : '时间戳转换', desc: language === 'en' ? 'Convert timestamps' : language === 'ja' ? 'タイムスタンプを変換' : '时间戳格式转换' },
+    { id: 'uuid', icon: Hash, title: language === 'en' ? 'UUID Generator' : language === 'ja' ? 'UUID生成' : 'UUID生成器', desc: language === 'en' ? 'Generate UUIDs' : language === 'ja' ? 'UUIDを生成' : '生成唯一标识符' }
   ]
 
   const copy = language === 'en' ? {
@@ -2456,6 +2743,347 @@ function QRCodeGenerator({ language = 'zh' }) {
         </div>
       )}
     </div>
+  </section>
+}
+
+function TimestampConverter({ language = 'zh' }) {
+  const [timestamp, setTimestamp] = useState('')
+  const [datetime, setDatetime] = useState('')
+  const [timezone, setTimezone] = useState('local')
+  const [convertedDate, setConvertedDate] = useState(null)
+  const [convertedTimestamp, setConvertedTimestamp] = useState(null)
+
+  const copy = language === 'en' ? {
+    title: 'Timestamp Converter',
+    subtitle: 'Convert between Unix timestamps and datetime',
+    timestampLabel: 'Unix Timestamp (seconds)',
+    timestampPlaceholder: 'Enter Unix timestamp',
+    datetimeLabel: 'Date & Time',
+    datetimePlaceholder: 'YYYY-MM-DD HH:mm:ss',
+    timezoneLabel: 'Timezone',
+    local: 'Local Time',
+    utc: 'UTC',
+    convertTimestamp: 'Convert Timestamp',
+    convertDatetime: 'Convert Datetime',
+    clear: 'Clear',
+    currentTimestamp: 'Current Timestamp',
+    result: 'Result'
+  } : language === 'ja' ? {
+    title: 'タイムスタンプ変換',
+    subtitle: 'Unixタイムスタンプと日時を相互変換',
+    timestampLabel: 'Unixタイムスタンプ（秒）',
+    timestampPlaceholder: 'Unixタイムスタンプを入力',
+    datetimeLabel: '日時',
+    datetimePlaceholder: 'YYYY-MM-DD HH:mm:ss',
+    timezoneLabel: 'タイムゾーン',
+    local: 'ローカル時刻',
+    utc: 'UTC',
+    convertTimestamp: 'タイムスタンプ変換',
+    convertDatetime: '日時変換',
+    clear: 'クリア',
+    currentTimestamp: '現在のタイムスタンプ',
+    result: '結果'
+  } : {
+    title: '时间戳转换器',
+    subtitle: 'Unix时间戳与日期时间互相转换',
+    timestampLabel: 'Unix 时间戳（秒）',
+    timestampPlaceholder: '输入时间戳',
+    datetimeLabel: '日期时间',
+    datetimePlaceholder: 'YYYY-MM-DD HH:mm:ss',
+    timezoneLabel: '时区',
+    local: '本地时间',
+    utc: 'UTC',
+    convertTimestamp: '转换时间戳',
+    convertDatetime: '转换日期',
+    clear: '清空',
+    currentTimestamp: '当前时间戳',
+    result: '转换结果'
+  }
+
+  const convertFromTimestamp = () => {
+    if (!timestamp.trim()) return
+    const ts = parseInt(timestamp)
+    if (isNaN(ts)) return
+
+    const date = new Date(ts * 1000)
+    if (timezone === 'utc') {
+      setConvertedDate(date.toISOString().replace('T', ' ').substring(0, 19))
+    } else {
+      const pad = n => String(n).padStart(2, '0')
+      setConvertedDate(`${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`)
+    }
+  }
+
+  const convertFromDatetime = () => {
+    if (!datetime.trim()) return
+    try {
+      const date = new Date(datetime)
+      if (isNaN(date.getTime())) return
+      setConvertedTimestamp(Math.floor(date.getTime() / 1000))
+    } catch (e) {
+      setConvertedTimestamp(null)
+    }
+  }
+
+  const setCurrentTimestamp = () => {
+    const now = Math.floor(Date.now() / 1000)
+    setTimestamp(String(now))
+    setConvertedDate(null)
+  }
+
+  const handleClear = () => {
+    setTimestamp('')
+    setDatetime('')
+    setConvertedDate(null)
+    setConvertedTimestamp(null)
+  }
+
+  return <section className="page devtools-page">
+    <div className="page-heading">
+      <div>
+        <h1>{copy.title}</h1>
+        <p className="subheading">{copy.subtitle}</p>
+      </div>
+    </div>
+
+    <div className="devtools-panel">
+      <div className="timestamp-converter">
+        <div className="timestamp-section">
+          <h3>{copy.timestampLabel}</h3>
+          <div className="form-field">
+            <input type="text" value={timestamp} onChange={e => setTimestamp(e.target.value)} placeholder={copy.timestampPlaceholder} />
+          </div>
+          <div className="devtools-actions" style={{ display: 'flex', gap: '10px' }}>
+            <button className="primary-button" onClick={convertFromTimestamp} disabled={!timestamp.trim()}>
+              <Clock size={16} />
+              {copy.convertTimestamp}
+            </button>
+            <button className="secondary-button" onClick={setCurrentTimestamp}>
+              <RefreshCw size={16} />
+              {copy.currentTimestamp}
+            </button>
+          </div>
+          {convertedDate && (
+            <div className="timestamp-result">
+              <div className="timestamp-result-label">{copy.result}:</div>
+              <div className="timestamp-result-value">{convertedDate}</div>
+            </div>
+          )}
+        </div>
+
+        <div className="timestamp-divider"></div>
+
+        <div className="timestamp-section">
+          <h3>{copy.datetimeLabel}</h3>
+          <div className="form-field">
+            <input type="text" value={datetime} onChange={e => setDatetime(e.target.value)} placeholder={copy.datetimePlaceholder} />
+          </div>
+          <div className="form-field">
+            <label>{copy.timezoneLabel}</label>
+            <select value={timezone} onChange={e => setTimezone(e.target.value)}>
+              <option value="local">{copy.local}</option>
+              <option value="utc">{copy.utc}</option>
+            </select>
+          </div>
+          <div className="devtools-actions" style={{ display: 'flex', gap: '10px' }}>
+            <button className="primary-button" onClick={convertFromDatetime} disabled={!datetime.trim()}>
+              <Clock size={16} />
+              {copy.convertDatetime}
+            </button>
+            <button className="secondary-button" onClick={handleClear}>
+              <X size={16} />
+              {copy.clear}
+            </button>
+          </div>
+          {convertedTimestamp !== null && (
+            <div className="timestamp-result">
+              <div className="timestamp-result-label">{copy.result}:</div>
+              <div className="timestamp-result-value">{convertedTimestamp}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  </section>
+}
+
+function UUIDGenerator({ language = 'zh' }) {
+  const [uuids, setUuids] = useState([])
+  const [count, setCount] = useState(1)
+  const [includeHyphens, setIncludeHyphens] = useState(true)
+  const [uppercase, setUppercase] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [copyToast, setCopyToast] = useState(false)
+
+  const copy = language === 'en' ? {
+    title: 'UUID Generator',
+    subtitle: 'Generate UUID v4 and random strings',
+    countLabel: 'Count',
+    optionsLabel: 'Options',
+    includeHyphens: 'Include hyphens',
+    uppercase: 'Uppercase',
+    generate: 'Generate',
+    clear: 'Clear',
+    copy: 'Copy',
+    copyAll: 'Copy All',
+    copied: 'Copied!'
+  } : language === 'ja' ? {
+    title: 'UUID生成',
+    subtitle: 'UUID v4とランダム文字列を生成',
+    countLabel: '生成数',
+    optionsLabel: 'オプション',
+    includeHyphens: 'ハイフンを含める',
+    uppercase: '大文字',
+    generate: '生成',
+    clear: 'クリア',
+    copy: 'コピー',
+    copyAll: 'すべてコピー',
+    copied: 'コピーしました！'
+  } : {
+    title: 'UUID 生成器',
+    subtitle: '生成 UUID v4 和随机字符串',
+    countLabel: '生成数量',
+    optionsLabel: '选项',
+    includeHyphens: '包含连字符',
+    uppercase: '大写',
+    generate: '生成',
+    clear: '清空',
+    copy: '复制',
+    copyAll: '复制全部',
+    copied: '已复制！'
+  }
+
+  const generateUUID = () => {
+    let uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0
+      const v = c === 'x' ? r : (r & 0x3 | 0x8)
+      return v.toString(16)
+    })
+    if (!includeHyphens) uuid = uuid.replace(/-/g, '')
+    if (uppercase) uuid = uuid.toUpperCase()
+    return uuid
+  }
+
+  const handleGenerate = () => {
+    const newUuids = Array.from({ length: count }, generateUUID)
+    setUuids(newUuids)
+    setCurrentPage(1)
+  }
+
+  const handleClear = () => {
+    setUuids([])
+    setCurrentPage(1)
+  }
+
+  const copyToClipboard = text => {
+    navigator.clipboard.writeText(text)
+    setCopyToast(true)
+    setTimeout(() => setCopyToast(false), 2000)
+  }
+
+  const copyAllUUIDs = () => {
+    navigator.clipboard.writeText(uuids.join('\n'))
+    setCopyToast(true)
+    setTimeout(() => setCopyToast(false), 2000)
+  }
+
+  const itemsPerPage = 5
+  const totalPages = Math.ceil(uuids.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const currentUuids = uuids.slice(startIndex, endIndex)
+
+  return <section className="page devtools-page">
+    <div className="page-heading">
+      <div>
+        <p className="eyebrow">LOCAL TOOLS</p>
+        <h1>{copy.title}</h1>
+        <p className="subheading">{copy.subtitle}</p>
+      </div>
+    </div>
+
+    <div className="uuid-config">
+      <div className="form-field">
+        <label>{copy.countLabel}</label>
+        <input type="number" min="1" max="100" value={count} onChange={e => setCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))} />
+      </div>
+      <div className="form-field">
+        <label>{copy.optionsLabel}</label>
+        <div className="uuid-options">
+          <label className="checkbox-label">
+            <input type="checkbox" checked={includeHyphens} onChange={e => setIncludeHyphens(e.target.checked)} />
+            <span>{copy.includeHyphens}</span>
+          </label>
+          <label className="checkbox-label">
+            <input type="checkbox" checked={uppercase} onChange={e => setUppercase(e.target.checked)} />
+            <span>{copy.uppercase}</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div className="devtools-actions">
+      <button className="primary-button" onClick={handleGenerate}>
+        <Hash size={16} />
+        {copy.generate}
+      </button>
+      {uuids.length > 0 && (
+        <>
+          <button className="secondary-button" onClick={copyAllUUIDs}>
+            <Copy size={16} />
+            {copy.copyAll}
+          </button>
+          <button className="secondary-button" onClick={handleClear}>
+            <X size={16} />
+            {copy.clear}
+          </button>
+        </>
+      )}
+    </div>
+
+    {uuids.length > 0 && (
+      <div className="uuid-list">
+        {currentUuids.map((uuid, i) => (
+          <div key={startIndex + i} className="uuid-item">
+            <code className="uuid-value">{uuid}</code>
+            <button className="icon-button" onClick={() => copyToClipboard(uuid)} title={copy.copy}>
+              <Copy size={16} />
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
+
+    {totalPages > 1 && (
+      <div className="pagination">
+        <button className="page-arrow" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+          <ChevronLeft size={14} />
+        </button>
+        <div className="page-numbers">
+          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+            let pageNum
+            if (totalPages <= 5) {
+              pageNum = i + 1
+            } else if (currentPage <= 3) {
+              pageNum = i + 1
+            } else if (currentPage >= totalPages - 2) {
+              pageNum = totalPages - 4 + i
+            } else {
+              pageNum = currentPage - 2 + i
+            }
+            return (
+              <button key={pageNum} className={currentPage === pageNum ? 'active' : ''} onClick={() => setCurrentPage(pageNum)}>
+                {pageNum}
+              </button>
+            )
+          })}
+        </div>
+        <button className="page-arrow" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    )}
+    {copyToast && <div className="toast"><Check size={16} />{copy.copied}</div>}
   </section>
 }
 

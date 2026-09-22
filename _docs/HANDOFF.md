@@ -111,6 +111,64 @@
 
 ## 最近完成的工作（2026-09-21）
 
+### 自定义工作区头像
+
+用户要求为每个工作区添加自定义头像功能，并创建专门的文件夹存储所有工作区头像。
+
+**完成内容：**
+
+1. **头像上传功能**：用户可在设置页的”工作区”部分上传自定义头像
+2. **头像存储**：所有头像保存在 `.workbench-data/avatars/` 目录，以 `{workspaceId}.jpg` 格式命名
+3. **头像显示**：工作区切换器和工作区菜单中显示自定义头像，无头像时显示工作区名称首字母
+4. **头像管理**：支持上传和删除操作，实时预览，时间戳缓存破坏确保立即刷新
+5. **文件限制**：支持 JPEG、PNG、GIF、WebP 格式，最大 2MB
+
+**涉及文件：**
+
+- `src/main.jsx`：
+  - 添加了 `uploadWorkspaceAvatar` 和 `deleteWorkspaceAvatar` 函数
+  - 在 `SettingsPage` 组件添加头像状态管理和上传/删除处理
+  - 在设置页添加头像预览、上传按钮和删除按钮
+  - 更新 `WorkspaceSwitcher` 组件显示自定义头像
+  - 添加中英日三语言支持
+
+- `src/styles.css`：
+  - 添加 `.settings-avatar-row`、`.settings-avatar-control`、`.settings-avatar-preview`、`.settings-avatar-fallback`、`.settings-avatar-actions` 样式
+  - 更新 `.workspace-avatar-main`、`.workspace-menu-avatar` 支持图片显示
+  - 支持暗色主题和响应式布局
+
+- `vite.config.js`：
+  - 实现 `avatarMiddleware()` 中间件
+  - `GET /api/avatar/:workspaceId` - 读取头像图片
+  - `POST /api/avatar/:workspaceId` - 上传头像（文件类型和大小验证）
+  - `DELETE /api/avatar/:workspaceId` - 删除头像
+  - 头像目录：`AVATAR_DIR = path.join(DATA_DIR, 'avatars')`
+
+### 侧边栏布局优化
+
+用户要求删除品牌标识（”工作台”），并将工作区切换器移动到侧边栏顶部，与折叠按钮并排显示。
+
+**完成内容：**
+
+1. **删除品牌标识**：移除了 `.brand` div 及其”工作台”文字和图标
+2. **顶部横向布局**：创建 `.sidebar-header` 容器，工作区切换器和折叠按钮并排显示
+3. **折叠状态优化**：折叠时工作区切换器隐藏，折叠按钮宽度变为 100%
+4. **间距调整**：优化侧边栏顶部到导航区域的垂直间距
+
+**涉及文件：**
+
+- `src/main.jsx`：
+  - 删除了品牌标识元素
+  - 创建 `.sidebar-header` 容器包含工作区切换器和折叠按钮
+  - 移除折叠按钮的内联样式
+
+- `src/styles.css`：
+  - 删除了 `.brand`、`.brand-mark`、`.brand-dot` 相关样式
+  - 添加 `.sidebar-header` 样式：横向 flexbox 布局，间距 8px
+  - 更新 `.sidebar-collapse-button`：从绝对定位改为普通布局，34x34px
+  - 更新折叠状态样式：header 垂直布局，折叠按钮 100% 宽度
+  - 删除旧的重复和绝对定位代码
+
 ### 工具箱整合
 
 用户要求将侧边栏中过多的独立工具项整合到统一的”工具箱”页面，并在该页面实现分页展示。
@@ -173,14 +231,90 @@ onComplete={seconds => {
    - 正则表达式字面量是否被误判为除法运算符
 3. 长链条件渲染（多个三元运算符串联）容易隐藏此类错误，建议分段检查或拆分成多个独立条件块
 
+### 时间戳转换器和 UUID 生成器（2026-09-22）
+
+用户要求新增时间戳转换器和 UUID 生成器两个工具，并要求它们采用与应用启动器一致的卡片式风格。
+
+**完成内容：**
+
+1. **时间戳转换器**：
+   - 支持时间戳转日期和日期转时间戳双向转换
+   - 提供「当前时间戳」快捷按钮
+   - 输入框和按钮采用横向排列布局
+   - 支持中文、English、日本語三种语言
+   
+2. **UUID 生成器**：
+   - 支持生成 UUID v4 和随机字符串
+   - 可选包含连字符和大小写转换
+   - 支持批量生成（1-100个）
+   - 每页显示 5 条 UUID，超过 5 条自动分页
+   - 每个 UUID 以独立卡片形式展示，带有独立复制按钮
+   - 支持复制全部和清空操作
+   
+3. **统一风格调整**：
+   - 移除 `devtools-panel` 外层容器，与应用启动器保持扁平布局
+   - 添加 "LOCAL TOOLS" eyebrow 标签
+   - 配置区域采用紧凑布局，减少内边距和高度
+   - UUID 卡片式列表，每个 UUID 带边框和悬停效果
+
+**涉及文件：**
+
+- `src/main.jsx`：
+  - Line 114: 更新 `SIDEBAR_TOOL_IDS` 数组，添加 `'timestamp'` 和 `'uuid'`
+  - Line 305-307: 更新 `toolTitleMap`，添加时间戳和 UUID 工具标题
+  - Line 315-321: 更新 `toolIconMap`，添加工具图标映射
+  - Line 356-358: 更新 `LANGUAGE_LABELS`，添加三语言翻译
+  - Line 722: 更新主路由逻辑，添加工具条件渲染
+  - Line 2260-2262: 在 `ToolsPage` 的工具数组中添加两个新工具卡片
+  - Line 2850-2950: 新增 `TimestampConverter` 组件实现
+  - Line 2952-3090: 新增 `UUIDGenerator` 组件实现
+  - Line 4295-4297: 在 `SidebarToolsConfig` 的 `allTools` 数组中添加新工具
+
+- `src/styles.css`：
+  - 新增 `.uuid-config` 样式：紧凑的配置区域布局
+  - 新增 `.uuid-options` 样式：选项复选框横向排列
+  - 新增 `.uuid-list` 样式：UUID 列表容器
+  - 新增 `.uuid-item` 样式：单个 UUID 卡片，带边框、内边距和悬停效果
+  - 新增 `.uuid-value` 样式：等宽字体显示 UUID
+  - 新增 `.checkbox-label` 样式：复选框标签样式
+
+**遇到的问题及解决：**
+
+1. **工具未在工具箱中显示**：初次实现后，用户反馈新增工具没有出现。检查后发现工具数组、图标映射和多语言标签都正确添加，但用户可能未刷新页面或清除缓存。
+
+2. **删除正则测试器和图片工具**：用户要求删除这两个工具。完整清理了所有引用：
+   - 从 `SIDEBAR_TOOL_IDS` 中移除 `'regex'` 和 `'imagetools'`
+   - 从 `toolTitleMap`、`toolIconMap`、`LANGUAGE_LABELS` 中删除对应条目
+   - 从工具数组中删除卡片条目
+   - 删除 `RegexTester` 和 `ImageTools` 组件定义
+   - 从主路由逻辑中移除条件渲染
+
+3. **时间戳转换器按钮布局**：用户要求按钮横向排列。调整了 `.devtools-actions` 的布局，使用 `flex-direction: row` 和 `gap: 10px`，确保「转换时间戳」「当前时间戳」和「转换日期」「清空」两组按钮都是左右排列。
+
+4. **UUID 生成器显示优化**：
+   - 用户要求生成结果以卡片形式显示，每个带复制按钮
+   - 实现了每页 5 条的分页功能
+   - 用户要求减小配置区域高度，移除外边框
+   - 用户要求整体风格更像应用启动器：移除 `devtools-panel` 容器，添加 "LOCAL TOOLS" 标签
+
+5. **设置页工具配置缺失**：用户反馈新增工具没有在设置-侧边栏中体现。在 `SidebarToolsConfig` 组件的 `allTools` 数组中补充了 `timestamp` 和 `uuid` 两项配置。
+
+**关键实现细节：**
+
+- 时间戳转换使用 JavaScript `Date` 对象进行双向转换
+- UUID 生成使用 `crypto.randomUUID()` API
+- 随机字符串使用 `crypto.getRandomValues()` 生成随机字节
+- 分页逻辑复用现有的 `pagination` 样式和组件结构
+- 配置区域使用 `grid` 布局，左侧数量输入，右侧选项复选框
+- UUID 卡片使用 `flexbox` 布局，左侧 UUID 值，右侧复制按钮
+
 ## 下一步计划
 
-1. 等待用户手动检查设置页桌面与窄屏排版。
-2. 根据用户反馈修正设置布局，不要自行打开浏览器复查。
-3. 由用户手动验证工作区改名和密码修改。
-4. 由用户手动验证端口修改、服务重启和开机自启动。
-5. 用户确认后更新 README 中任何与实际体验不一致的细节。
-6. 只有用户明确要求时再提交 Git 或创建版本。
+1. 等待用户手动检查时间戳转换器和 UUID 生成器功能。
+2. 根据用户反馈调整工具页面的交互和布局。
+3. 由用户手动验证工具在不同语言下的显示效果。
+4. 用户确认后更新 README 中的工具列表和功能说明。
+5. 只有用户明确要求时再提交 Git 或创建版本。
 
 ## 关键实现位置
 
